@@ -768,5 +768,5 @@ def compute_franka_reward(
     success_condition = delta_pos < success_threshold
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
 
-    return rewards, reset_buf
+    return rewards.detach(), reset_buf
 
