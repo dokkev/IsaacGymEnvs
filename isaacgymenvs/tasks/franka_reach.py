@@ -10,8 +10,6 @@ from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, t
 from isaacgymenvs.utils.torch_jit_utils import quat_from_euler_xyz
 from isaacgymenvs.tasks.base.vec_task import VecTask
 
-
-
 @torch.jit.script
 def axisangle2quat(vec, eps=1e-6):
     """
@@ -665,5 +663,5 @@ def compute_franka_reward(
     success_condition = eef_goal_dist < success_threshold
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
 
-    return rewards, reset_buf
+    return rewards.detach(), reset_buf
 
