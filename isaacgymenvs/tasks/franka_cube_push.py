@@ -87,7 +87,11 @@ class FrankaCubePush(PrivInfoVecTask):
         
         # include priviliged information in the observation space
         self.include_priv_info = self.cfg["env"]["includePrivInfo"]
-
+        
+        
+        # define encoding for RMA
+        self.include_encoded = self.cfg["env"]["includePrivInfo"]
+        
         # Controller type (OSC or joint torques)
         self.control_type = self.cfg["env"]["controlType"]
         assert self.control_type in {"osc", "joint_tor"},\
@@ -95,7 +99,17 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3) + eef_pose (7)
-        self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
+        if self.include_priv_info:
+            if self.include_encoded:
+                self.cfg["env"]["numObservations"] = 25
+            else:
+                self.cfg["env"]["numObservations"] = 26
+        else:
+            self.cfg["env"]["numObservations"] = 17
+
+
+
+        
         # actions include: delta EEF if OSC (6) or joint torques (7)
         self.cfg["env"]["numActions"] = 6 if self.control_type == "osc" else 7
         
@@ -462,7 +476,7 @@ class FrankaCubePush(PrivInfoVecTask):
             obs.append(self.priv_info_buf)
             
         # print obs shape
-        print(f"Observation shape: {torch.cat(obs, dim=-1).shape}")  
+        #print(f"Observation shape: {torch.cat(obs, dim=-1).shape}")  
         
         
 

@@ -1,5 +1,6 @@
 import numpy as np 
 import torch
+import torch.nn as nn
 from gym import spaces
 from isaacgymenvs.tasks.base.vec_task import VecTask
 
@@ -20,6 +21,9 @@ class PrivInfoVecTask(VecTask):
         super().__init__(config, rl_device, sim_device, graphics_device_id, headless, **kwargs)
         self.config = config
         self._allocate_task_buffer()
+        self.encoded_ouput_size = self.config['env']['encodedDim']
+        self.encoder = PrivInfoEncoder(input_dim=self.num_env_factors, hidden_dims=[64, 64], output_dim=self.encoded_ouput_size)
+        self.encoder.to(rl_device)
         self.mpc_obs_space = spaces.Dict(
             {
                 "obs": spaces.Box(np.ones(self.num_obs) * -np.Inf, np.ones(self.num_obs) * np.Inf),
@@ -27,6 +31,13 @@ class PrivInfoVecTask(VecTask):
                 "proprio_hist": spaces.Box(np.ones(self.prop_hist_len) * -np.Inf, np.ones(self.prop_hist_len) * np.Inf),
             }
         )
+
+        # include priviliged information in the observation space
+        self.include_priv_info = self.config["env"]["includePrivInfo"]
+        
+        
+        # define encoding for RMA
+        self.include_encoded = self.config["env"]["includePrivInfo"]
 
  
         # TODO: populate proprio_hist_buf history buf at each timestpe
@@ -64,15 +75,42 @@ class PrivInfoVecTask(VecTask):
 
     def reset(self):
         super().reset()
-        self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+        self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
+        if self.include_encoded:
+           self.obs_dict['priv_info'] = self.encoded_priv_info
+        else:
+           self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+       
         self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
         # breakpoint()
         return self.obs_dict
 
     def step(self, actions):
        super().step(actions)
-       self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+       self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
+       if self.include_encoded:
+           self.obs_dict['priv_info'] = self.encoded_priv_info
+       else:
+           self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+       
        self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
        return self.obs_dict, self.rew_buf, self.reset_buf, self.extras
-       
+
+
+class PrivInfoEncoder(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim):
+        super(PrivInfoEncoder, self).__init__()
+        layers = []
+        prev_dim = input_dim
+        
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.ELU())
+            prev_dim = hidden_dim
+        
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)      
         
