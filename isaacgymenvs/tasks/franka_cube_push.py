@@ -453,7 +453,6 @@ class FrankaCubePush(PrivInfoVecTask):
         self.obs_buf = torch.cat(obs, dim=-1)
 
         # maxs = {ob: torch.max(self.states[ob]).item() for ob in obs}
-
         return self.obs_buf
     
     def store_proprio_hist(self):
@@ -614,7 +613,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # Sample position and orientation for the cube
         centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32)
-        cube_height = self.states["cube_size"].squeeze(-1)
+        cube_height = self.states["cube_size"]
 
         # Set fixed z value based on table height and cube height
         sampled_init_cube_state[:, 2] = self._table_surface_pos[2] + cube_height[env_ids] / 2
