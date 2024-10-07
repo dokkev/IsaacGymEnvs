@@ -28,13 +28,6 @@ class PrivInfoVecTask(VecTask):
             }
         )
 
- 
-        # TODO: populate proprio_hist_buf history buf at each timestpe
-        # https://github.com/HaozhiQi/hora/blob/main/hora/tasks/allegro_hand_hora.py
-
-        # TODO: on tdmpc end, optional encoder for priv_info / proprio_hist from config 
-        # TODO: on tdmpc end, batch/num_envs tensor shapes
-
     def _allocate_task_buffer(self):
         # extra buffers for observe randomized params
         self.prop_hist_len = self.config['env']['propHistoryLen']
