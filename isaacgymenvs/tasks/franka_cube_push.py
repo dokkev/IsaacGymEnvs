@@ -455,7 +455,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self._update_states()
 
     def compute_reward(self, actions):
-        self.rew_buf[:], self.reset_buf[:] = compute_franka_reward(
+        self.rew_buf[:], self.reset_buf[:], self.extras['success'] = compute_franka_reward(
             self.reset_buf, self.progress_buf, self.actions, self.states, self.reward_settings, self.max_episode_length
         )
 
@@ -773,7 +773,7 @@ class FrankaCubePush(PrivInfoVecTask):
 def compute_franka_reward(
     reset_buf, progress_buf, actions, states, reward_settings, max_episode_length
 ):
-    # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor]
+    # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
     # Compute distance from the cube to the goal position
     cube_pos = states["cube_pos"]
@@ -809,11 +809,6 @@ def compute_franka_reward(
     # Compute resets: reset the environment if the episode ends or the task is successfully completed
     success_threshold = 0.05  # Success threshold for distance to goal
     success_condition = delta_pos < success_threshold
-    
-
-             
-    
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
-
-    return rewards.detach(), reset_buf
+    return rewards.detach(), reset_buf, success_condition
 
