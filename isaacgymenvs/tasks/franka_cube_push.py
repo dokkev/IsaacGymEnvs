@@ -83,17 +83,36 @@ class FrankaCubePush(PrivInfoVecTask):
         
         # print messages for priv info for each env
         self.enable_priv_info_print = self.cfg["env"]["enablePrivInfoPrint"]
+     
+        
+        # include priviliged information in the observation space
+        self.include_priv_info = self.cfg["env"]["includePrivInfo"]
 
         # Controller type (OSC or joint torques)
         self.control_type = self.cfg["env"]["controlType"]
         assert self.control_type in {"osc", "joint_tor"},\
             "Invalid control type specified. Must be one of: {osc, joint_tor}"
 
+        self.control_input = self.cfg["env"]["controlInput"]
+        # assert self.control_type in {"pose3d", "pose6d"},\
+            # "Invalid control input specified. Must be one of: {pose3d, pose6d}"
+
+
         # dimensions
-        # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3) + eef_pose (7)
-        self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
+        # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
+        if self.include_priv_info:
+            self.cfg["env"]["numObservations"] = 26
+        else:
+            self.cfg["env"]["numObservations"] = 17
+            
+
+        # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
         # actions include: delta EEF if OSC (6) or joint torques (7)
-        self.cfg["env"]["numActions"] = 6 if self.control_type == "osc" else 7
+        if self.control_input == "pose3d":
+            self.cfg["env"]["numActions"] = 3
+        else: # pose6d
+            self.cfg["env"]["numActions"] = 6
+        
         
         # Values to be filled in at runtime
         self.states = {}                        # will be dict filled with relevant states to use for reward calculation
@@ -116,6 +135,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self._rigid_body_state = None  # State of all rigid bodies             (n_envs, n_bodies, 13)
         self._contact_forces = None     # Contact forces in sim
         self._eef_state = None  # end effector state (at grasping point)
+        self._finger_state = None  # finger state
         self._j_eef = None  # Jacobian for end effector
         self._mm = None  # Mass matrix
         self._arm_control = None  # Tensor buffer for controlling arm
@@ -133,7 +153,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # Franka defaults
         self.franka_default_dof_pos = to_torch(
-            [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.035, 0.035], device=self.device
+            [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.001, 0.001], device=self.device
         )
 
         # OSC Gains 
@@ -214,15 +234,11 @@ class FrankaCubePush(PrivInfoVecTask):
         table_stand_opts.fix_base_link = True
         table_stand_asset = self.gym.create_box(self.sim, *[0.2, 0.2, table_stand_height], table_opts)
 
-        # Create cube asset (Puck)
-        # cube_opts = gymapi.AssetOptions()
-        # cube_asset = self.gym.create_cylinder(self.sim, self.puck_radius, self.puck_height, cube_opts)
-        
+
         cube_color = gymapi.Vec3(0.6, 0.1, 0.0)
-        
         # load cube asset
         puck_asset_file = "urdf/puck.urdf"
-        self.cube_size = 0.03
+        self.cube_size = 0.05
         cube_asset = self.gym.load_asset(self.sim,asset_root, puck_asset_file, gymapi.AssetOptions())
         
         
@@ -355,6 +371,9 @@ class FrankaCubePush(PrivInfoVecTask):
         self.handles = {
             # Franka
             "hand": self.gym.find_actor_rigid_body_handle(env_ptr, franka_handle, "panda_hand"),
+            
+            # Franka Gripper
+            "finger": self.gym.find_actor_rigid_body_handle(env_ptr, franka_handle, "panda_rightfinger_tip"),
 
             # Cube
             "cube_body_handle": self.gym.find_actor_rigid_body_handle(self.envs[0], self._cube_id, "box"),
@@ -373,6 +392,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self._q = self._dof_state[..., 0]
         self._qd = self._dof_state[..., 1]
         self._eef_state = self._rigid_body_state[:, self.handles["hand"], :]
+        self._finger_state = self._rigid_body_state[:, self.handles["finger"], :]
         _jacobian = self.gym.acquire_jacobian_tensor(self.sim, "franka")
         jacobian = gymtorch.wrap_tensor(_jacobian)
         hand_joint_index = self.gym.get_actor_joint_dict(env_ptr, franka_handle)['panda_hand_joint']
@@ -408,17 +428,20 @@ class FrankaCubePush(PrivInfoVecTask):
             "eef_pos": self._eef_state[:, :3],
             "eef_quat": self._eef_state[:, 3:7],
             "eef_vel": self._eef_state[:, 7:],
+            "finger_pos" : self._finger_state[:, :3],
+            "finger_quat" : self._finger_state[:, 3:7],
 
             # Object Observable Information
-            "cube_quat": self._cube_state[:, 3:7],
             "cube_pos": self._cube_state[:, :3],
-            "cube_contact": self._cube_state[:, :3] - self._eef_state[:, :3], # cube to eef pos diff
+            "cube_quat": self._cube_state[:, 3:7],
+            "cube_vel": self._cube_state[:, 7:10],
+            
+            "cube_contact": self._cube_state[:, :3] - self._finger_state[:, :3], # cube to eef pos diff
+            
             "goal_cube_pos": self._goal_cube_state[:, :3],
             "goal_cube_quat": self._goal_cube_state[:, 3:7],
             "cube_to_goal_cube_pos": self._goal_cube_state[:, :3] - self._cube_state[:, :3],
             
-            # EEF Goal Information
-            "eef_goal_pos": self._pos_control[:, :3],
         })
 
     def _refresh(self):
@@ -443,11 +466,22 @@ class FrankaCubePush(PrivInfoVecTask):
         cube_quat=self.states["cube_quat"]
         eef_pos=self.states["eef_pos"]
         eef_quat=self.states["eef_quat"]
+
+        cube_vel=self.states["cube_vel"]
+        
         # compute current cube to goal cube position
         cube_pos_diff = self._goal_cube_state[:, :3] - cube_pos
+        
         # TODO: compute current cube to goal cube quaternion
         
-        obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_pos_diff]
+        # Observable Information
+        obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel,  cube_pos_diff]
+        
+        # Include priv info in the observation space
+        if self.include_priv_info:
+            obs.append(self.priv_info_buf)
+            
+          
 
         # Concatenate all observations
         self.obs_buf = torch.cat(obs, dim=-1)
@@ -571,7 +605,7 @@ class FrankaCubePush(PrivInfoVecTask):
             for i, rb_prop in enumerate(cube_rb_props):
                 cube_mass = rb_prop.mass # float (kg)
                 cube_com = rb_prop.com # Vec3
-                # cube_inertia = rb_prop.inertia # Mat33
+                # cube_inertia = rb_prop.inertia # Mat33 == [Vec3, Vec3, Vec3]
                 
             #isaacgym.gymapi.RigidShapeProperties
             for i, shape_prop in enumerate(cube_shape_props):
@@ -594,6 +628,10 @@ class FrankaCubePush(PrivInfoVecTask):
                 print(f"  Mass = {cube_mass}")
                 print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
                 print(f"  Friction = {cube_friction}")
+                # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
+                
+            
+            
              
         
     def _reset_init_cube_state(self, env_ids, check_valid=True):
@@ -664,16 +702,25 @@ class FrankaCubePush(PrivInfoVecTask):
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
 
-        # arm  command
-        u_arm = self.actions
+        # arm command (only x, y, z actions)
+        u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
 
-        # print(self.cmd_limit, self.action_scale)
+        # Scale the position control (pose3d)
+        u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
 
-        # Control arm (scale value first)
-        u_arm = u_arm * self.cmd_limit / self.action_scale
+        # Fixed orientation in axis-angle or quaternion (choose based on implementation)
+        fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+
+        # Prepare dpose (6D: position + orientation)
+        dpose = torch.zeros((self.num_envs, 6), device=self.device)
+        dpose[:, :3] = u_arm  # Set the position control to x, y, z
+        dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
+
         if self.control_type == "osc":
-            u_arm = self._compute_osc_torques(dpose=u_arm)
-        self._arm_control[:, :] = u_arm
+            # Compute OSC torques with fixed orientation
+            u_arm = self._compute_osc_torques(dpose=dpose)
+
+        self._arm_control[:, :] = u_arm  # Apply control with fixed orientation and computed position
 
         # Deploy actions
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
@@ -697,19 +744,17 @@ class FrankaCubePush(PrivInfoVecTask):
             self.gym.refresh_rigid_body_state_tensor(self.sim)
 
             # Grab relevant states to visualize
-            eef_pos = self.states["eef_pos"]
-            eef_rot = self.states["eef_quat"]
+            eef_pos = self.states["finger_pos"]
+            eef_rot = self.states["finger_quat"]
             cube_pos = self.states["cube_pos"]
             cube_rot = self.states["cube_quat"]
             goal_cube_pos = self.states["goal_cube_pos"]
             goal_cube_rot = self.states["goal_cube_quat"]
-            eef_goal_pos = self.states["eef_goal_pos"]
-            eef_goal_rot = self.states["eef_goal_quat"]
 
 
             # Plot visualizations
             for i in range(self.num_envs):
-                for pos, rot in zip((eef_pos, eef_goal_pos), (eef_rot, eef_goal_rot)):
+                for pos, rot in zip((eef_pos, cube_pos, goal_cube_pos), (eef_rot, cube_rot, goal_cube_rot)):
                     px = (pos[i] + quat_apply(rot[i], to_torch([1, 0, 0], device=self.device) * 0.2)).cpu().numpy()
                     py = (pos[i] + quat_apply(rot[i], to_torch([0, 1, 0], device=self.device) * 0.2)).cpu().numpy()
                     pz = (pos[i] + quat_apply(rot[i], to_torch([0, 0, 1], device=self.device) * 0.2)).cpu().numpy()
@@ -753,11 +798,10 @@ def compute_franka_reward(
     jerk_penalty = torch.mean(jerk_penalty, dim=-1)
 
  
-    
     # Combine rewards with scaling factors
     rewards = (reward_settings["r_pos_scale"] * pos_reward +
-               reward_settings["r_ori_scale"] * ori_reward +
                reward_settings["r_contact_scale"] * contact_reward)
+
     
     # TODO: Add jerk penalty
     # TODO: Add real-robot safey penalty
@@ -765,6 +809,10 @@ def compute_franka_reward(
     # Compute resets: reset the environment if the episode ends or the task is successfully completed
     success_threshold = 0.05  # Success threshold for distance to goal
     success_condition = delta_pos < success_threshold
+    
+
+             
+    
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
 
     return rewards.detach(), reset_buf
