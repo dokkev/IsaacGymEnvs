@@ -20,7 +20,7 @@ class PrivInfoVecTask(VecTask):
         super().__init__(config, rl_device, sim_device, graphics_device_id, headless, **kwargs)
         self.config = config
         self._allocate_task_buffer()
-        self.obs_space = spaces.Dict(
+        self.mpc_obs_space = spaces.Dict(
             {
                 "obs": spaces.Box(np.ones(self.num_obs) * -np.Inf, np.ones(self.num_obs) * np.Inf),
                 "priv_info": spaces.Box(np.ones(self.num_env_factors) * -np.Inf, np.ones(self.num_env_factors) * np.Inf),
@@ -64,16 +64,15 @@ class PrivInfoVecTask(VecTask):
 
     def reset(self):
         super().reset()
-        if self.config['task']['randomize']:
-            self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
-            self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+        # self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+        # self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+        # breakpoint()
         return self.obs_dict
 
     def step(self, actions):
        super().step(actions)
-       if self.config['task']['randomize']:
-            self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
-            self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+    #    self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+    #    self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
        return self.obs_dict, self.rew_buf, self.reset_buf, self.extras
        
         
