@@ -101,9 +101,9 @@ class FrankaCubePush(PrivInfoVecTask):
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
         if self.include_priv_info:
-            self.cfg["env"]["numObservations"] = 26
+            self.cfg["env"]["numObservations"] = 29
         else:
-            self.cfg["env"]["numObservations"] = 17
+            self.cfg["env"]["numObservations"] = 20
             
 
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
@@ -475,7 +475,7 @@ class FrankaCubePush(PrivInfoVecTask):
         # TODO: compute current cube to goal cube quaternion
         
         # Observable Information
-        obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel,  cube_pos_diff]
+        obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel, cube_pos_diff]
         
         # Include priv info in the observation space
         if self.include_priv_info:
