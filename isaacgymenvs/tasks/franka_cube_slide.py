@@ -722,7 +722,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         if self.control_type == "osc":
             # Compute OSC torques with fixed orientation
-            u_arm = self._compute_osc_torques(dpose=dpose)
+            u_arm = self._compute_osc_torques(dpose=u_arm)
 
         self._arm_control[:, :] = u_arm  # Apply control with fixed orientation and computed position
 
