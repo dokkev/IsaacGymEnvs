@@ -100,11 +100,11 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
 
         # dimensions
-        # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
+        # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + + cube_vel(3) [priv_info_dim]
         if self.include_priv_info:
-            self.cfg["env"]["numObservations"] = 26
+            self.cfg["env"]["numObservations"] = 29
         else:
-            self.cfg["env"]["numObservations"] = 17
+            self.cfg["env"]["numObservations"] = 20
             
 
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
