@@ -702,27 +702,27 @@ class FrankaCubePush(PrivInfoVecTask):
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
 
-        if self.control_input == "pose3d":
-            # arm command (only x, y, z actions)
-            u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
-
-            # Scale the position control (pose3d)
-            u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
-
-            # Fixed orientation in axis-angle or quaternion (choose based on implementation)
-            fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
-
-            # Prepare dpose (6D: position + orientation)
-            dpose = torch.zeros((self.num_envs, 6), device=self.device)
-            dpose[:, :3] = u_arm  # Set the position control to x, y, z
-            dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
-        else:
-            u_arm = self.actions
-            u_arm = u_arm * self.cmd_limit / self.action_scale
-
         if self.control_type == "osc":
-            # Compute OSC torques with fixed orientation
-            u_arm = self._compute_osc_torques(dpose=u_arm)
+            if self.control_input == "pose3d":
+                # arm command (only x, y, z actions)
+                u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
+
+                # Scale the position control (pose3d)
+                u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
+
+                # Fixed orientation in axis-angle or quaternion (choose based on implementation)
+                fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+
+                # Prepare dpose (6D: position + orientation)
+                dpose = torch.zeros((self.num_envs, 6), device=self.device)
+                dpose[:, :3] = u_arm  # Set the position control to x, y, z
+                dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
+                u_arm = self._compute_osc_torques(dpose=dpose)
+    
+            else:
+                u_arm = self.actions
+                u_arm = u_arm * self.cmd_limit / self.action_scale
+                u_arm = self._compute_osc_torques(dpose=u_arm)
 
         self._arm_control[:, :] = u_arm  # Apply control with fixed orientation and computed position
 
