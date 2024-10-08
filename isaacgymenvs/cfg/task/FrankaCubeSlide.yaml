@@ -15,10 +15,10 @@ env:
   clipObservations: 5.0
   clipActions: 1.0
 
-  cubeInitPosNoise: 0.2
-  cubeInitOriNoise: 3.14
-  cubeGoalPosNoise: 0.2
-  cubeGoalOriNoise: 0.0
+  cubeInitPosNoise: 0.
+  cubeInitOriNoise: 0
+  cubeGoalPosNoise: 0.
+  cubeGoalOriNoise: 0.
 
   frankaPositionNoise: 0.0
   frankaRotationNoise: 0.0
@@ -31,7 +31,9 @@ env:
 
   posRewardScale: 1.0
   oriRewardScale: 0.0
+  velRewardScale: 0.5
   contactRewardScale: 0.1
+  
   
   propHistoryLen: 30
   privInfoDim: 9 
