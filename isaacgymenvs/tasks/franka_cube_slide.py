@@ -699,6 +699,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
         m_eef_inv = self._j_eef @ mm_inv @ torch.transpose(self._j_eef, 1, 2)
         m_eef = torch.inverse(m_eef_inv)
 
+        # abs pos and ori
+        
         # Transform our cartesian action `dpose` into joint torques `u`
         u = torch.transpose(self._j_eef, 1, 2) @ m_eef @ (
                 self.kp * dpose - self.kd * self.states["eef_vel"]).unsqueeze(-1)
@@ -759,7 +761,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self.randomize_buf += 1
         
         # contact time
-        in_contact = (torch.norm(self.states["cube_contact"], dim=-1) < 0.02).float()  # Adjust threshold as needed
+        in_contact = (torch.norm(self.states["cube_contact"], dim=-1) < 0.2).float()  # Adjust threshold as needed
         self.contact_time = (self.contact_time + in_contact) * (1 - self.reset_buf.float())
 
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
@@ -808,57 +810,56 @@ def compute_franka_reward(
     # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
     # Extract necessary states
-    cube_pos = states["cube_pos"]             # Shape: [batch_size, 3]
-    cube_vel = states["cube_vel"]             # Shape: [batch_size, 3]
-    eef_pos = states["eef_pos"]               # Shape: [batch_size, 3]
-    contact_distance = torch.norm(states["cube_contact"], dim=-1)  # Shape: [batch_size], distance between EEF and cube
-    goal_pos = states["goal_cube_pos"]        # Shape: [batch_size, 3]
-    contact_time = states["contact_time"]     # Shape: [batch_size]
+    cube_pos = states["cube_pos"]                  # Shape: [batch_size, 3]
+    cube_contact = states["cube_contact"]          # Shape: [batch_size, 3]
+    goal_pos = states["goal_cube_pos"]             # Shape: [batch_size, 3]
+    
+    # Compute current distance to the goal
+    delta_pos_vector = goal_pos - cube_pos                             # Shape: [batch_size, 3]
+    delta_pos = torch.norm(delta_pos_vector, dim=-1)                   # Shape: [batch_size]
 
-    # Compute distance to goal and direction vector
-    delta_pos_vector = goal_pos - cube_pos                                 # Shape: [batch_size, 3]
-    delta_pos = torch.norm(delta_pos_vector, dim=-1)                       # Shape: [batch_size]
-    direction = delta_pos_vector / (delta_pos.unsqueeze(-1) + 1e-6)        # Shape: [batch_size, 3]
+    # Compute displacement from initial position
+    displacement_vector = goal_pos - cube_pos               # Shape: [batch_size, 3]
+    displacement = torch.norm(displacement_vector, dim=-1)             # Shape: [batch_size]
 
-    # Compute cube velocity along the direction to the goal
-    vel_along_direction = torch.sum(cube_vel * direction, dim=-1)          # Shape: [batch_size]
+    # 1. Position Reward: Reward for getting closer to the goal
+    pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)                    # Shape: [batch_size]
 
-    # Determine if the robot is in contact with the cube
-    contact_threshold = 0.02  # Define a small threshold for considering "in contact"
-    in_contact = (contact_distance < contact_threshold).float()            # Shape: [batch_size]
+    # Define pushing displacement threshold
+    pushing_displacement_threshold = 0.2  # Adjust based on desired displacement
+    
+    # Determine if the cube has been pushed sufficiently
+    pushed_condition = displacement > pushing_displacement_threshold   # Shape: [batch_size], bool
 
-    # Compute position reward (always active)
-    pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)                        # Shape: [batch_size]
+    # 2. Contact Reward: Penalize contact after pushing
+    contact_norm = torch.norm(cube_contact, dim=-1)                    # Shape: [batch_size]
+    
+    # action penalty or termination reward
+    
+    contact_penalty = torch.where(
+        pushed_condition,
+        contact_norm,                               # Penalize contact
+        torch.zeros_like(contact_norm)              # No penalty before pushing
+    )  # Shape: [batch_size]
+    
+    # Scale the contact penalty
+    contact_penalty_scale = reward_settings.get("contact_penalty_scale", 1.0)
+    contact_reward = -contact_penalty_scale * contact_penalty          # Negative reward (penalty)
 
-    # Compute velocity reward (always active)
-    vel_reward = torch.clamp(vel_along_direction, min=0.0)                 # Shape: [batch_size]
-
-    # Initialize total reward
+    # Combine rewards
     rewards = (
         reward_settings["r_pos_scale"] * pos_reward +
-        reward_settings["r_vel_scale"] * vel_reward
+        contact_reward  # Already negative if penalizing
     )
-
-    # Approach reward: Encourage EEF to approach the cube when not in contact
-    eef_cube_distance = torch.norm(eef_pos - cube_pos, dim=-1)             # Shape: [batch_size]
-    approach_reward = (1.0 - torch.tanh(5.0 * eef_cube_distance)) * (1.0 - in_contact)
-    approach_reward *= reward_settings["r_contact_scale"]             # Shape: [batch_size]
-    rewards += approach_reward
-
-    # Exponential contact time penalty: Penalize prolonged contact
-    contact_time_penalty_scale = 0.2  # Positive float
-    contact_time_penalty = torch.exp(contact_time * contact_time_penalty_scale) - 1.0  # Shape: [batch_size]
-    rewards -= contact_time_penalty
-
+    
     # Compute resets
-    success_threshold = 0.05
+    success_threshold = 0.05  # Success threshold for distance to goal
     success_condition = delta_pos < success_threshold
     reset_buf = torch.where(
         (progress_buf >= max_episode_length - 1) | success_condition,
         torch.ones_like(reset_buf),
         reset_buf
     )
-
     return rewards.detach(), reset_buf, success_condition
 
 
