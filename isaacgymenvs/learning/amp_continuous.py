@@ -1,3 +1,7 @@
+# AMP - Adversarial Motion Priors
+
+
+
 # Copyright (c) 2018-2023, NVIDIA Corporation
 # All rights reserved.
 #
@@ -46,16 +50,48 @@ import isaacgymenvs.learning.common_agent as common_agent
 
 from tensorboardX import SummaryWriter
 
+class PrivInfoEncoder(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim):
+        super(PrivInfoEncoder, self).__init__()
+        layers = []
+        prev_dim = input_dim
+        
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.ELU())
+            prev_dim = hidden_dim
+        
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)
 
 class AMPAgent(common_agent.CommonAgent):
 
     def __init__(self, base_name, params):
+        self.priv_info_dim = params['config']['env']['privInfoDim']
+        self.encoded_output_size = params['config']['env']['encodedDim']
+        
+        # Adjust observation space
+        original_obs_shape = params['config']['env']['obs_space']['observation_space'].shape
+        new_obs_shape = (original_obs_shape[0] - self.priv_info_dim + self.encoded_output_size,)
+        params['config']['env']['obs_space']['observation_space'].shape = new_obs_shape
+        
         super().__init__(base_name, params)
 
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         if self._normalize_amp_input:
             self._amp_input_mean_std = RunningMeanStd(self._amp_observation_space.shape).to(self.ppo_device)
+
+        # Initialize PrivInfoEncoder
+        self.encoder = PrivInfoEncoder(
+            input_dim=self.priv_info_dim,
+            hidden_dims=[32, 32],
+            output_dim=self.encoded_output_size
+        )
+        self.encoder.to(self.ppo_device)
 
         return
 
@@ -68,25 +104,57 @@ class AMPAgent(common_agent.CommonAgent):
         super().set_eval()
         if self._normalize_amp_input:
             self._amp_input_mean_std.eval()
+        self.encoder.eval()
         return
 
     def set_train(self):
         super().set_train()
         if self._normalize_amp_input:
             self._amp_input_mean_std.train()
+        self.encoder.train()
         return
 
     def get_stats_weights(self):
         state = super().get_stats_weights()
         if self._normalize_amp_input:
             state['amp_input_mean_std'] = self._amp_input_mean_std.state_dict()
+        state['encoder'] = self.encoder.state_dict()
         return state
 
     def set_stats_weights(self, weights):
         super().set_stats_weights(weights)
         if self._normalize_amp_input:
             self._amp_input_mean_std.load_state_dict(weights['amp_input_mean_std'])
+        self.encoder.load_state_dict(weights['encoder'])
         return
+
+    def _preproc_obs(self, obs_batch):
+        if type(obs_batch) is dict:
+            obs = obs_batch['obs']
+        else:
+            obs = obs_batch
+
+        if obs.dtype == torch.uint8:
+            obs = obs.float() / 255.0
+        
+        if len(obs.shape) == 3:
+            obs = obs.permute((0, 2, 1))
+        if len(obs.shape) == 4:
+            obs = obs.permute((0, 3, 1, 2))
+
+        # Extract and encode privileged information
+        priv_info = obs[:, :self.priv_info_dim]
+        encoded_priv_info = self.encoder(priv_info)
+
+        # Combine encoded privileged information with the rest of the observation
+        new_obs = torch.cat([encoded_priv_info, obs[:, self.priv_info_dim:]], dim=1)
+        
+        if type(obs_batch) is dict:
+            obs_batch['obs'] = new_obs
+        else:
+            obs_batch = new_obs
+        
+        return obs_batch
 
     def play_steps(self):
         self.set_eval()
@@ -96,6 +164,7 @@ class AMPAgent(common_agent.CommonAgent):
 
         for n in range(self.horizon_length):
             self.obs, done_env_ids = self._env_reset_done()
+            self.obs = self._preproc_obs(self.obs)  # Preprocess observations
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
 
             if self.use_action_masks:
@@ -111,6 +180,7 @@ class AMPAgent(common_agent.CommonAgent):
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            self.obs = self._preproc_obs(self.obs)  # Preprocess observations
             shaped_rewards = self.rewards_shaper(rewards)
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
             self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
@@ -160,7 +230,7 @@ class AMPAgent(common_agent.CommonAgent):
             batch_dict[k] = a2c_common.swap_and_flatten01(v)
 
         return batch_dict
-
+    
     def prepare_dataset(self, batch_dict):
         super().prepare_dataset(batch_dict)
         self.dataset.values_dict['amp_obs'] = batch_dict['amp_obs']

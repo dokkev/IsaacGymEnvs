@@ -22,7 +22,7 @@ class PrivInfoVecTask(VecTask):
         self.config = config
         self._allocate_task_buffer()
         self.encoded_ouput_size = self.config['env']['encodedDim']
-        self.encoder = PrivInfoEncoder(input_dim=self.num_env_factors, hidden_dims=[64, 64], output_dim=self.encoded_ouput_size)
+        self.encoder = PrivInfoEncoder(input_dim=self.num_env_factors, hidden_dims=[32, 32], output_dim=self.encoded_ouput_size)
         self.encoder.to(rl_device)
         self.mpc_obs_space = spaces.Dict(
             {
@@ -75,11 +75,11 @@ class PrivInfoVecTask(VecTask):
 
     def reset(self):
         super().reset()
-        self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
-        if self.include_encoded:
-           self.obs_dict['priv_info'] = self.encoded_priv_info
-        else:
-           self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+        #self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
+        #if self.include_encoded:
+        #   self.obs_dict['priv_info'] = self.encoded_priv_info
+        #else:
+        self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
        
         self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
         # breakpoint()
@@ -87,11 +87,11 @@ class PrivInfoVecTask(VecTask):
 
     def step(self, actions):
        super().step(actions)
-       self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
-       if self.include_encoded:
-           self.obs_dict['priv_info'] = self.encoded_priv_info
-       else:
-           self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+       #self.encoded_priv_info = self.encoder(self.priv_info_buf.to(self.rl_device))
+       #if self.include_encoded:
+       #    self.obs_dict['priv_info'] = self.encoded_priv_info
+       #else:
+       self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
        
        self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
        return self.obs_dict, self.rew_buf, self.reset_buf, self.extras
