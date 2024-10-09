@@ -79,6 +79,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
             "r_pos_scale": self.cfg["env"]["posRewardScale"],
             "r_ori_scale": self.cfg["env"]["oriRewardScale"],
             "r_contact_scale": self.cfg["env"]["contactRewardScale"],
+            "r_vel_scale": self.cfg["env"]["velRewardScale"],
         }
         
         # print messages for priv info for each env
@@ -158,7 +159,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         # OSC Gains 
         # TODO: Variable gains determined by ActionSpace
-        self.kp = to_torch([200.] * 15, device=self.device)
+        self.kp = to_torch([500.] * 6, device=self.device)
         self.kd = 2 * torch.sqrt(self.kp)
         self.kp_null = to_torch([10.] * 7, device=self.device)
         self.kd_null = 2 * torch.sqrt(self.kp_null)
@@ -402,12 +403,15 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self._mm = mm[:, :7, :7]
         self._cube_state = self._root_state[:, self._cube_id, :]
         
+        # contact time
+        self.contact_time = torch.zeros(self.num_envs, device=self.device)
    
         # Initialize states
         self.states.update({
             "cube_size": torch.ones_like(self._eef_state[:, 0]) * self.cube_size,
         })
         
+
 
         # Initialize actions
         self._pos_control = torch.zeros((self.num_envs, self.num_dofs), dtype=torch.float, device=self.device)
@@ -437,6 +441,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
             "cube_vel": self._cube_state[:, 7:10],
             
             "cube_contact": self._cube_state[:, :3] - self._finger_state[:, :3], # cube to eef pos diff
+            
+            "contact_time": self.contact_time,
             
             "goal_cube_pos": self._goal_cube_state[:, :3],
             "goal_cube_quat": self._goal_cube_state[:, 3:7],
@@ -534,6 +540,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         
         env_ids_int32 = env_ids.to(dtype=torch.int32)
+        
+        # Reset cube state
+        self.contact_time[env_ids] = 0.0
 
         # if not self._i:
         self._reset_init_cube_state(env_ids=env_ids, check_valid=False)
@@ -652,6 +661,16 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # Sample position and orientation for the cube
         centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32)
         cube_height = self.states["cube_size"]
+        
+        # add offet to the centered_cube_xy_state
+        init_x_offset = -0.1
+        init_y_offset = 0.0
+        init_cube_xy_state = centered_cube_xy_state + torch.tensor([init_x_offset, init_y_offset], device=self.device, dtype=torch.float32)
+        
+        # add offset to the centered_cube_xy_state
+        goal_x_offset = 0.5
+        goal_y_offset = 0.0
+        goal_cube_xy_state = centered_cube_xy_state + torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
 
         # Set fixed z value based on table height and cube height
         sampled_init_cube_state[:, 2] = self._table_surface_pos[2] + cube_height[env_ids] / 2
@@ -662,9 +681,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
         sampled_goal_cube_state[:, 6] = 1.0
 
         # Sample x, y values with noise
-        sampled_init_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
+        sampled_init_cube_state[:, :2] = init_cube_xy_state.unsqueeze(0) + \
                                     2.0 * self.init_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
-        sampled_goal_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
+        sampled_goal_cube_state[:, :2] = goal_cube_xy_state.unsqueeze(0) + \
                                     2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
 
         # Set the new sampled values as the initial state for the cube
@@ -672,6 +691,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self._goal_cube_state[env_ids, :] = sampled_goal_cube_state
 
     def _compute_osc_torques(self, dpose):
+  
         # Solve for Operational Space Control # Paper: khatib.stanford.edu/publications/pdfs/Khatib_1987_RA.pdf
         # Helpful resource: studywolf.wordpress.com/2013/09/17/robot-control-4-operation-space-control/
         q, qd = self._q[:, :7], self._qd[:, :7]
@@ -702,27 +722,31 @@ class FrankaCubeSlide(PrivInfoVecTask):
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
 
-        if self.control_input == "pose3d":
-            # arm command (only x, y, z actions)
-            u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
-
-            # Scale the position control (pose3d)
-            u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
-
-            # Fixed orientation in axis-angle or quaternion (choose based on implementation)
-            fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
-
-            # Prepare dpose (6D: position + orientation)
-            dpose = torch.zeros((self.num_envs, 6), device=self.device)
-            dpose[:, :3] = u_arm  # Set the position control to x, y, z
-            dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
-        else:
-            u_arm = self.actions
-            u_arm = u_arm * self.cmd_limit / self.action_scale
-
         if self.control_type == "osc":
-            # Compute OSC torques with fixed orientation
-            u_arm = self._compute_osc_torques(dpose=u_arm)
+            if self.control_input == "pose3d":
+                # arm command (only x, y, z actions)
+                u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
+
+                # Scale the position control (pose3d)
+                u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
+
+                # Fixed orientation in axis-angle or quaternion (choose based on implementation)
+                fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+
+                # Prepare dpose (6D: position + orientation)
+                dpose = torch.zeros((self.num_envs, 6), device=self.device)
+                dpose[:, :3] = u_arm  # Set the position control to x, y, z
+                dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
+                u_arm = self._compute_osc_torques(dpose=dpose)
+    
+            else:
+                u_arm = self.actions
+                u_arm = u_arm * self.cmd_limit / self.action_scale
+                
+                u_arm = self._compute_osc_torques(dpose=u_arm)
+                
+               
+
 
         self._arm_control[:, :] = u_arm  # Apply control with fixed orientation and computed position
 
@@ -733,6 +757,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
     def post_physics_step(self):
         self.progress_buf += 1
         self.randomize_buf += 1
+        
+        # contact time
+        in_contact = (torch.norm(self.states["cube_contact"], dim=-1) < 0.02).float()  # Adjust threshold as needed
+        self.contact_time = (self.contact_time + in_contact) * (1 - self.reset_buf.float())
 
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -779,41 +807,58 @@ def compute_franka_reward(
 ):
     # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
-    # Compute distance from the cube to the goal position
-    cube_pos = states["cube_pos"]
-    cube_vel = states["cube_vel"]
-    contact = states["cube_contact"]
-    goal_pos = states["goal_cube_pos"]
-    
-    # Compute delta_pos and direction vector
-    delta_pos_vector = goal_pos - cube_pos
-    delta_pos = torch.norm(delta_pos_vector, dim=-1, keepdim=True)
-    direction = delta_pos_vector / (delta_pos + 1e-6)
-    
-    # Compute rewards
-    pos_reward = 1.0 - torch.tanh(10.0 * delta_pos.squeeze(-1))
-    vel_along_direction = torch.sum(cube_vel * direction, dim=-1)
-    vel_reward = torch.clamp(vel_along_direction, min=0.0)
-    
-    # Penalize prolonged contact
-    contact_threshold = 0.1
-    contact_penalty = torch.where(vel_along_direction > contact_threshold, contact, torch.zeros_like(contact))
-    contact_reward = 1.0 - torch.tanh(10.0 * torch.norm(contact_penalty, dim=-1))
-    
-    # Combine rewards
+    # Extract necessary states
+    cube_pos = states["cube_pos"]             # Shape: [batch_size, 3]
+    cube_vel = states["cube_vel"]             # Shape: [batch_size, 3]
+    eef_pos = states["eef_pos"]               # Shape: [batch_size, 3]
+    contact_distance = torch.norm(states["cube_contact"], dim=-1)  # Shape: [batch_size], distance between EEF and cube
+    goal_pos = states["goal_cube_pos"]        # Shape: [batch_size, 3]
+    contact_time = states["contact_time"]     # Shape: [batch_size]
+
+    # Compute distance to goal and direction vector
+    delta_pos_vector = goal_pos - cube_pos                                 # Shape: [batch_size, 3]
+    delta_pos = torch.norm(delta_pos_vector, dim=-1)                       # Shape: [batch_size]
+    direction = delta_pos_vector / (delta_pos.unsqueeze(-1) + 1e-6)        # Shape: [batch_size, 3]
+
+    # Compute cube velocity along the direction to the goal
+    vel_along_direction = torch.sum(cube_vel * direction, dim=-1)          # Shape: [batch_size]
+
+    # Determine if the robot is in contact with the cube
+    contact_threshold = 0.02  # Define a small threshold for considering "in contact"
+    in_contact = (contact_distance < contact_threshold).float()            # Shape: [batch_size]
+
+    # Compute position reward (always active)
+    pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)                        # Shape: [batch_size]
+
+    # Compute velocity reward (always active)
+    vel_reward = torch.clamp(vel_along_direction, min=0.0)                 # Shape: [batch_size]
+
+    # Initialize total reward
     rewards = (
         reward_settings["r_pos_scale"] * pos_reward +
-        reward_settings["r_contact_scale"] * contact_reward +
         reward_settings["r_vel_scale"] * vel_reward
     )
-    
+
+    # Approach reward: Encourage EEF to approach the cube when not in contact
+    eef_cube_distance = torch.norm(eef_pos - cube_pos, dim=-1)             # Shape: [batch_size]
+    approach_reward = (1.0 - torch.tanh(5.0 * eef_cube_distance)) * (1.0 - in_contact)
+    approach_reward *= reward_settings["r_contact_scale"]             # Shape: [batch_size]
+    rewards += approach_reward
+
+    # Exponential contact time penalty: Penalize prolonged contact
+    contact_time_penalty_scale = 0.2  # Positive float
+    contact_time_penalty = torch.exp(contact_time * contact_time_penalty_scale) - 1.0  # Shape: [batch_size]
+    rewards -= contact_time_penalty
+
     # Compute resets
     success_threshold = 0.05
-    success_condition = delta_pos.squeeze(-1) < success_threshold
+    success_condition = delta_pos < success_threshold
     reset_buf = torch.where(
         (progress_buf >= max_episode_length - 1) | success_condition,
         torch.ones_like(reset_buf),
         reset_buf
     )
+
     return rewards.detach(), reset_buf, success_condition
+
 

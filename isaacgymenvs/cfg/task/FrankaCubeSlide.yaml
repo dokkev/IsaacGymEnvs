@@ -40,7 +40,7 @@ env:
 
 
   controlType: osc  # options are {joint_tor, osc}
-  controlInput: pose3d # options are {pose3d, pose6d}
+  controlInput: pose6d # options are {pose3d, pose6d}
 
   asset:
     assetRoot: "../../assets"
