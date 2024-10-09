@@ -801,18 +801,10 @@ def compute_franka_reward(
     # 3. Contact Reward: Distance between the cube and the end effector
     contact_reward = 1.0 - torch.tanh(10.0 * torch.norm(states["cube_contact"], dim=-1))
 
-    # 4. Jerk Reward: Penalize large changes in actions
-    jerk_penalty = torch.norm(actions[:, :] - actions[:, 1:], dim=-1)
-    jerk_penalty = torch.mean(jerk_penalty, dim=-1)
-
- 
     # Combine rewards with scaling factors
     rewards = (reward_settings["r_pos_scale"] * pos_reward +
                reward_settings["r_contact_scale"] * contact_reward)
 
-    
-    # TODO: Add jerk penalty
-    # TODO: Add real-robot safey penalty
 
     # Compute resets: reset the environment if the episode ends or the task is successfully completed
     success_threshold = 0.05  # Success threshold for distance to goal

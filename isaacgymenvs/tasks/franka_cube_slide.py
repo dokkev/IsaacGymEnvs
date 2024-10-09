@@ -80,6 +80,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
             "r_ori_scale": self.cfg["env"]["oriRewardScale"],
             "r_contact_scale": self.cfg["env"]["contactRewardScale"],
             "r_vel_scale": self.cfg["env"]["velRewardScale"],
+            "r_success_scale": self.cfg["env"]["successRewardScale"],
+            "r_eef_approach_scale": self.cfg["env"]["eefApproachPenaltyScale"],
         }
         
         # print messages for priv info for each env
@@ -809,57 +811,47 @@ def compute_franka_reward(
 ):
     # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
-    # Extract necessary states
-    cube_pos = states["cube_pos"]                  # Shape: [batch_size, 3]
-    cube_contact = states["cube_contact"]          # Shape: [batch_size, 3]
-    goal_pos = states["goal_cube_pos"]             # Shape: [batch_size, 3]
-    
-    # Compute current distance to the goal
-    delta_pos_vector = goal_pos - cube_pos                             # Shape: [batch_size, 3]
-    delta_pos = torch.norm(delta_pos_vector, dim=-1)                   # Shape: [batch_size]
+    # Compute distance from the cube to the goal position
+    cube_pos = states["cube_pos"]
+    goal_pos = states["goal_cube_pos"]
+    cube_vel = states["cube_vel"]
+    delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
 
-    # Compute displacement from initial position
-    displacement_vector = goal_pos - cube_pos               # Shape: [batch_size, 3]
-    displacement = torch.norm(displacement_vector, dim=-1)             # Shape: [batch_size]
+    # 1. Distance Reward: Reward based on the distance between the cube and the goal
+    distance_reward = reward_settings["r_pos_scale"] * 1.0 - torch.tanh(10.0 * delta_pos)  # Scaled based on the distance
 
-    # 1. Position Reward: Reward for getting closer to the goal
-    pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)                    # Shape: [batch_size]
-
-    # Define pushing displacement threshold
-    pushing_displacement_threshold = 0.2  # Adjust based on desired displacement
-    
-    # Determine if the cube has been pushed sufficiently
-    pushed_condition = displacement > pushing_displacement_threshold   # Shape: [batch_size], bool
-
-    # 2. Contact Reward: Penalize contact after pushing
-    contact_norm = torch.norm(cube_contact, dim=-1)                    # Shape: [batch_size]
-    
-    # action penalty or termination reward
-    
-    contact_penalty = torch.where(
-        pushed_condition,
-        contact_norm,                               # Penalize contact
-        torch.zeros_like(contact_norm)              # No penalty before pushing
-    )  # Shape: [batch_size]
-    
-    # Scale the contact penalty
-    contact_penalty_scale = reward_settings.get("contact_penalty_scale", 1.0)
-    contact_reward = -contact_penalty_scale * contact_penalty          # Negative reward (penalty)
-
-    # Combine rewards
-    rewards = (
-        reward_settings["r_pos_scale"] * pos_reward +
-        contact_reward  # Already negative if penalizing
-    )
-    
-    # Compute resets
+    # 2. Huge Reward for Success: Large reward when the cube is at the goal position
     success_threshold = 0.05  # Success threshold for distance to goal
     success_condition = delta_pos < success_threshold
-    reset_buf = torch.where(
-        (progress_buf >= max_episode_length - 1) | success_condition,
-        torch.ones_like(reset_buf),
-        reset_buf
-    )
+    success_reward = torch.where(success_condition, reward_settings["r_success_scale"] , torch.zeros_like(distance_reward))
+
+    # 3. Penalty for End-Effector near the Goal: Penalize when the end effector is near the goal
+    ee_pos = states["eef_pos"]  # End-effector position
+    ee_goal_dist = torch.norm(ee_pos - goal_pos, dim=-1)
+    ee_penalty = -reward_settings["r_eef_approach_scale"] * torch.tanh(10.0 * ee_goal_dist)
+
+    # 4. Contact Reward: Scale the contact reward inversely proportional to how close the cube is to the goal
+    # When far from goal, the contact reward is higher, and when close, it converges to 0.
+    contact_scaling = torch.tanh(10.0 * delta_pos)  # Scaling factor based on distance (increase when far, decrease when close)
+    contact_reward = reward_settings["r_contact_scale"] * contact_scaling * (1.0 - torch.tanh(10.0 * torch.norm(states["cube_contact"], dim=-1)))
+
+    # 5. Cube Velocity Reward: Reward for cube velocity in the correct direction and magnitude
+    goal_dir = goal_pos - cube_pos  # Direction from cube to goal
+    goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)  # Normalize
+    vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)  # Projection of velocity along goal direction
+    vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
+
+    # Combine rewards with scaling factors
+    rewards = (distance_reward +
+               success_reward + 
+               ee_penalty +
+               contact_reward +
+               vel_reward)
+
+    # Compute resets: reset the environment if the episode ends or the task is successfully completed
+    reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
+    
     return rewards.detach(), reset_buf, success_condition
+
 
 

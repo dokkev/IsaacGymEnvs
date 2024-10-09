@@ -31,8 +31,10 @@ env:
 
   posRewardScale: 1.0
   oriRewardScale: 0.0
-  velRewardScale: 0.5
-  contactRewardScale: 0.1
+  velRewardScale: 1.0
+  contactRewardScale: 0.5
+  successRewardScale: 100.0
+  eefApproachPenaltyScale: 0.1
   
   
   propHistoryLen: 30
