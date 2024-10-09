@@ -6,7 +6,7 @@ from isaacgym import gymtorch
 from isaacgym import gymapi
 from isaacgym import gymutil
 
-from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate  
+from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate, quat_to_angle_axis, get_euler_xyz, quaternion_to_matrix
 from isaacgymenvs.tasks.base.priv_info_task import PrivInfoVecTask
 
 
@@ -44,6 +44,37 @@ def axisangle2quat(vec, eps=1e-6):
     # Reshape and return output
     quat = quat.reshape(list(input_shape) + [4, ])
     return quat
+
+# @torch.jit.script
+def orientation_error(desired, current):
+    """
+    From robosuite
+    This function calculates a 3-dimensional orientation error vector for use in the
+    impedance controller. It does this by computing the delta rotation between the
+    inputs and converting that rotation to exponential coordinates (axis-angle
+    representation, where the 3d vector is axis * angle).
+    See https://en.wikipedia.org/wiki/Axis%E2%80%93angle_representation for more information.
+    Optimized function to determine orientation error from matrices
+
+    Args:
+        desired (torch.tensor): 2d array representing target orientation matrix
+        current (torch.tensor): 2d array representing current orientation matrix
+
+    Returns:
+        torch.tensor: 2d array representing orientation error as a matrix
+    """
+    rc1 = current[:, 0:3, 0]
+    rc2 = current[:, 0:3, 1]
+    rc3 = current[:, 0:3, 2]
+    rd1 = desired[:, 0:3, 0]
+    rd2 = desired[:,  0:3, 1]
+    rd3 = desired[:, 0:3, 2]
+    error = 0.5 * (
+        torch.cross(rc1, rd1,dim=-1) + 
+        torch.cross(rc2, rd2,dim=-1) + 
+        torch.cross(rc3, rd3,dim=-1)
+    )
+    return error
 
 
 class FrankaCubePush(PrivInfoVecTask):
@@ -172,7 +203,10 @@ class FrankaCubePush(PrivInfoVecTask):
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
 
         # Refresh tensors
+        # self._update_states()
+        # self.compute_observations()
         self._refresh()
+        self.init_eef_rotmats = quaternion_to_matrix(self._eef_state[:,3:7])
 
     def create_sim(self):
         self.sim_params.up_axis = gymapi.UP_AXIS_Z
@@ -710,12 +744,13 @@ class FrankaCubePush(PrivInfoVecTask):
             u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
 
             # Fixed orientation in axis-angle or quaternion (choose based on implementation)
-            fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+            # fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+            ori_error = orientation_error(self.init_eef_rotmats, quaternion_to_matrix(self._eef_state[:,3:7]))
 
             # Prepare dpose (6D: position + orientation)
             dpose = torch.zeros((self.num_envs, 6), device=self.device)
             dpose[:, :3] = u_arm  # Set the position control to x, y, z
-            dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
+            dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
         else:
             u_arm = self.actions
             u_arm = u_arm * self.cmd_limit / self.action_scale
