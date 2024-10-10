@@ -1,14 +1,15 @@
 import numpy as np
 import os
 import torch
-import copy
 
 from isaacgym import gymtorch
 from isaacgym import gymapi
 from isaacgym import gymutil
 
-from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate, quat_to_angle_axis
+from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate  
 from isaacgymenvs.tasks.base.priv_info_task import PrivInfoVecTask
+
+
 
 @torch.jit.script
 def axisangle2quat(vec, eps=1e-6):
@@ -43,6 +44,7 @@ def axisangle2quat(vec, eps=1e-6):
     # Reshape and return output
     quat = quat.reshape(list(input_shape) + [4, ])
     return quat
+
 
 class FrankaCubePush(PrivInfoVecTask):
 
@@ -121,6 +123,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self._cube_state = None                # Current state of cube for the current env
         self._goal_cube_state = None           # Goal state of cube for the current env
         self._cube_id = None                   # Actor ID corresponding to cube for a given env
+        
         self._eef_goal_state = None            # Goal state of end effector
 
         
@@ -169,10 +172,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
 
         # Refresh tensors
-        # self._update_states()
-        # self.compute_observations()
         self._refresh()
-        self.steps = 0
 
     def create_sim(self):
         self.sim_params.up_axis = gymapi.UP_AXIS_Z
@@ -707,27 +707,11 @@ class FrankaCubePush(PrivInfoVecTask):
                 # arm command (only x, y, z actions)
                 u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
 
-            # Fixed orientation 
-            if self.steps == 0:
-                ori_error = torch.tensor([0.0, 0.0, 0.0], device=self.device)  
-            else: 
-                eef_rot = self.states["eef_quat"]
-                if self.steps == 1: 
-                    self.q_desired = copy.deepcopy(eef_rot)
+                # Scale the position control (pose3d)
+                u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
 
-                q_error = quat_mul(self.q_desired, quat_conjugate(eef_rot))
-                angle, axis = quat_to_angle_axis(q_error)
-                ori_error = angle.unsqueeze(1) * axis
-
-            self.steps+=1 
-            
-            # Prepare dpose (6D: position + orientation)
-            dpose = torch.zeros((self.num_envs, 6), device=self.device)
-            dpose[:, :3] = u_arm  # Set the position control to x, y, z
-            dpose[:, 3:] = ori_error  # Set the orientation error
-        else:
-            u_arm = self.actions
-            u_arm = u_arm * self.cmd_limit / self.action_scale
+                # Fixed orientation in axis-angle or quaternion (choose based on implementation)
+                fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
 
                 # Prepare dpose (6D: position + orientation)
                 dpose = torch.zeros((self.num_envs, 6), device=self.device)
