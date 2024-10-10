@@ -18,5 +18,6 @@ print("Observation space is", envs.observation_space)
 print("Action space is", envs.action_space)
 obs = envs.reset()
 for _ in range(10000000):
-	random_actions = 2.0 * torch.rand((num_envs,) + envs.action_space.shape, device = 'cuda:0') - 1.0
-	envs.step(random_actions)
+	actions = 2.0 * torch.rand((num_envs,) + envs.action_space.shape, device = 'cuda:0') - 1.0
+	# actions = torch.zeros((num_envs,) + envs.action_space.shape, device = 'cuda:0') 
+	envs.step(actions)
