@@ -32,6 +32,7 @@ env:
   posRewardScale: 1.0
   oriRewardScale: 0.0
   contactRewardScale: 0.1
+  successRewardScale: 1.0
   
   propHistoryLen: 30
   privInfoDim: 9 

@@ -80,6 +80,7 @@ class FrankaCubePush(PrivInfoVecTask):
             "r_pos_scale": self.cfg["env"]["posRewardScale"],
             "r_ori_scale": self.cfg["env"]["oriRewardScale"],
             "r_contact_scale": self.cfg["env"]["contactRewardScale"],
+            "r_success_scale": self.cfg["env"]["successRewardScale"]
         }
         
         # print messages for priv info for each env
@@ -795,6 +796,10 @@ def compute_franka_reward(
     goal_pos = states["goal_cube_pos"]
     delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
 
+    # Compute resets: reset the environment if the episode ends or the task is successfully completed
+    success_threshold = 0.05  # Success threshold for distance to goal
+    success_condition = delta_pos < success_threshold
+
     # 1. Position Reward: Reward for getting closer to the goal
     pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)  # Scale based on distance
 
@@ -812,18 +817,17 @@ def compute_franka_reward(
     jerk_penalty = torch.norm(actions[:, :] - actions[:, 1:], dim=-1)
     jerk_penalty = torch.mean(jerk_penalty, dim=-1)
 
+    # 5. Success: Bonus for achieving the task
+    success_reward = success_condition * max_episode_length
  
     # Combine rewards with scaling factors
     rewards = (reward_settings["r_pos_scale"] * pos_reward +
-               reward_settings["r_contact_scale"] * contact_reward)
-
-    
+               reward_settings["r_contact_scale"] * contact_reward + 
+               reward_settings["r_success_scale"] * success_reward)
+ 
     # TODO: Add jerk penalty
     # TODO: Add real-robot safey penalty
-
-    # Compute resets: reset the environment if the episode ends or the task is successfully completed
-    success_threshold = 0.05  # Success threshold for distance to goal
-    success_condition = delta_pos < success_threshold
+   
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
     return rewards.detach(), reset_buf, success_condition
 
