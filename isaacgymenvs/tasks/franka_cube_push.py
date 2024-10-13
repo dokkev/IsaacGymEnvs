@@ -166,9 +166,9 @@ class FrankaCubePush(PrivInfoVecTask):
         # self.kd = 2 * torch.sqrt(self.kp)
 
         
-        self.kp_min = to_torch([0.0] * 6, device=self.device)
+        self.kp_min = to_torch([100.0] * 6, device=self.device)
         self.kp_max = to_torch([400.0] * 6, device=self.device)
-        self.kd_min = to_torch([0.0] * 6, device=self.device)
+        self.kd_min = to_torch([10.0] * 6, device=self.device)
         self.kd_max = to_torch([40.0] * 6, device=self.device)
 
         # Initialize kp and kd with default values
