@@ -31,8 +31,8 @@ env:
 
   posRewardScale: 1.0
   oriRewardScale: 0.0
-  velRewardScale: 1.0
-  contactRewardScale: 0.5
+  velRewardScale: 2.0
+  contactRewardScale: 0.3
   successRewardScale: 100.0
   eefApproachPenaltyScale: 0.1
   
