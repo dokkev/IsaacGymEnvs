@@ -109,14 +109,19 @@ class FrankaCubePush(PrivInfoVecTask):
             
 
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
-        # actions include: delta EEF if OSC (6)  + kp (6) + kd (6) 
+        # actions include: delta EEF if OSC (6)  + kp (6) (kd critically damped)
         if self.control_input == "pose3d":
-            self.cfg["env"]["numActions"] = 3 + 12
+            self.cfg["env"]["numActions"] = 3 
         elif self.control_input == "pose2d":
-            self.cfg["env"]["numActions"] = 2 + 12
+            self.cfg["env"]["numActions"] = 2 
         else: # pose6d
-            self.cfg["env"]["numActions"] = 6 + 12
-        
+            self.cfg["env"]["numActions"] = 6 
+
+        if self.cfg["env"]["variableImpedance"]:
+            self.variable_imp = True
+            self.cfg["env"]["numActions"] += 6
+        else:
+            self.variable_imp = False
         
         # Values to be filled in at runtime
         self.states = {}                        # will be dict filled with relevant states to use for reward calculation
@@ -723,8 +728,10 @@ class FrankaCubePush(PrivInfoVecTask):
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
                 # Extract kp and kd
-                kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
-                kd = self.kd_min + (self.kd_max - self.kd_min) * torch.sigmoid(self.actions[:, 9:15])  # Actions 9 to 14 (6)
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
+                    self.kp = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
 
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
@@ -747,9 +754,7 @@ class FrankaCubePush(PrivInfoVecTask):
                 dpose[:, :3] = u_arm  # Set the position control to x, y, z
                 dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
 
-                # Update kp and kd in the controller
-                self.kp = kp
-                self.kd = kd
+
 
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
@@ -757,15 +762,15 @@ class FrankaCubePush(PrivInfoVecTask):
             elif self.control_input == "pose6d":
                 # Similar extraction for pose6d
                 u_arm = self.actions[:, :6]  # First 6 actions for pose6d control
-                kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
-                kd = self.kd_min + (self.kd_max - self.kd_min) * torch.sigmoid(self.actions[:, 12:18])  # Actions 12 to 17 (6)
+                
+                # Update kp and kd
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
+                    self.kp = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
 
                 # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale
-
-                # Update kp and kd
-                self.kp = kp
-                self.kd = kd
 
                 # Compute OSC torques
                 u_arm = self._compute_osc_torques(dpose=u_arm)
