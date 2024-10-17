@@ -820,6 +820,34 @@ class FrankaCubePush(PrivInfoVecTask):
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], px[0], px[1], px[2]], [0.85, 0.1, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
+    
+    def batch_reward_fn(self, obs):
+
+        # Observable Information
+        # obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel, cube_pos_diff]
+        
+        cube_pos = obs[:, :, :3]
+        cube_quat = obs[:, :, 3:7]
+        eef_pos = obs[:, :, 7:10]
+        eef_quat = obs[:, :, 10:14]
+        cube_vel = obs[:, :, 14:17]
+    
+        cube_pos_diff = obs[:, :, 17:20]
+        delta_pos = torch.norm(cube_pos_diff, dim=-1)
+        pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)  # Scale based on distance
+
+        cube_contact = cube_pos - eef_pos
+        contact_reward = 1.0 - torch.tanh(10.0 * torch.norm(cube_contact, dim=-1))
+
+        success_threshold = 0.05  # Success threshold for distance to goal
+        success_condition = delta_pos < success_threshold
+        success_reward = success_condition * self.max_episode_length
+
+        rewards = (self.reward_settings["r_pos_scale"] * pos_reward +
+                self.reward_settings["r_contact_scale"] * contact_reward + 
+                self.reward_settings["r_success_scale"] * success_reward)     
+        
+        return rewards.detach()  
 
 #####################################################################
 ###=========================jit functions=========================###
