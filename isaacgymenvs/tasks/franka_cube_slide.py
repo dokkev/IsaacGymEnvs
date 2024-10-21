@@ -110,13 +110,22 @@ class FrankaCubeSlide(PrivInfoVecTask):
             
 
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
-        # actions include: delta EEF if OSC (6) or joint torques (7)
+        # actions include: delta EEF if OSC (6)  + kp (6) (kd critically damped)
         if self.control_input == "pose3d":
-            self.cfg["env"]["numActions"] = 3
+            self.cfg["env"]["numActions"] = 3 
+        elif self.control_input == "pose2d":
+            self.cfg["env"]["numActions"] = 2 
         else: # pose6d
-            self.cfg["env"]["numActions"] = 6
-        
-        
+            self.cfg["env"]["numActions"] = 6 
+
+        if self.cfg["env"]["variableImpedance"]:
+            self.variable_imp = True
+            
+            self.cfg["env"]["numActions"] += 6
+        else:
+            self.variable_imp = False
+            
+        self.impedance_range = self.cfg["env"]["impedanceRange"]        
         # Values to be filled in at runtime
         self.states = {}                        # will be dict filled with relevant states to use for reward calculation
         self.handles = {}                       # will be dict mapping names to relevant sim handles
@@ -151,6 +160,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         self.up_axis = "z"
         self.up_axis_idx = 2
+        self._steps_elapsed = 0 
 
         super().__init__(config=self.cfg, rl_device=rl_device, sim_device=sim_device, graphics_device_id=graphics_device_id, headless=headless, virtual_screen_capture=virtual_screen_capture, force_render=force_render)
 
@@ -160,8 +170,18 @@ class FrankaCubeSlide(PrivInfoVecTask):
         )
 
         # OSC Gains 
-        # TODO: Variable gains determined by ActionSpace
-        self.kp = to_torch([500.] * 6, device=self.device)
+        # set default gains
+        # self.kp = to_torch([200.] * 6, device=self.device)
+        # self.kd = 2 * torch.sqrt(self.kp)
+
+        kp_min = self.impedance_range[0]
+        kp_max = self.impedance_range[1]
+        
+        self.kp_min = to_torch([kp_min] * 6, device=self.device)
+        self.kp_max = to_torch([kp_max] * 6, device=self.device)
+
+        # Initialize kp and kd with default values
+        self.kp = to_torch([200.] * 6, device=self.device)
         self.kd = 2 * torch.sqrt(self.kp)
         self.kp_null = to_torch([10.] * 7, device=self.device)
         self.kd_null = 2 * torch.sqrt(self.kp_null)
@@ -728,35 +748,66 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         if self.control_type == "osc":
             if self.control_input == "pose3d":
-                # arm command (only x, y, z actions)
-                u_arm = self.actions[:, :3]  # Only take the first 3 elements (x, y, z)
+                # Extract control commands
+                u_arm = self.actions[:, :3]  # First 3 actions for position control
 
-                # Scale the position control (pose3d)
+                # Extract kp and kd
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
+                    self.kp = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
+                    
+
+                # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
 
-                # Fixed orientation in axis-angle or quaternion (choose based on implementation)
-                fixed_orientation = torch.tensor([0.0, 0.0, 0.0], device=self.device)  # Fixed axis-angle, no rotation
+                # Fixed orientation 
+                if self._steps_elapsed == 0:
+                    ori_error = torch.zeros((self.num_envs, 3), device=self.device)
+                else: 
+                    eef_rot = self.states["eef_quat"]
+                    if self._steps_elapsed == 1: 
+                        self.q_desired = copy.deepcopy(eef_rot)
+
+                    q_error = quat_mul(self.q_desired, quat_conjugate(eef_rot))
+                    angle, axis = quat_to_angle_axis(q_error)
+                    ori_error = angle.unsqueeze(1) * axis
+                self._steps_elapsed += 1 
 
                 # Prepare dpose (6D: position + orientation)
                 dpose = torch.zeros((self.num_envs, 6), device=self.device)
                 dpose[:, :3] = u_arm  # Set the position control to x, y, z
-                dpose[:, 3:] = fixed_orientation  # Set the orientation to the fixed value
+                dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
+
+
+
+                # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
-    
-            else:
-                u_arm = self.actions
+
+            elif self.control_input == "pose6d":
+                # Similar extraction for pose6d
+                u_arm = self.actions[:, :6]  # First 6 actions for pose6d control
+                
+                # Update kp and kd
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
+                    self.kp = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
+                    print("kp: ", kp)
+
+                # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale
-                
+
+                # Compute OSC torques
                 u_arm = self._compute_osc_torques(dpose=u_arm)
-                
-               
 
-
-        self._arm_control[:, :] = u_arm  # Apply control with fixed orientation and computed position
+        self._arm_control[:, :] = u_arm  # Apply control with variable kp and kd
 
         # Deploy actions
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
+
+
 
     def post_physics_step(self):
         self.progress_buf += 1
@@ -798,7 +849,34 @@ class FrankaCubeSlide(PrivInfoVecTask):
                     p0 = pos[i].cpu().numpy()
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], px[0], px[1], px[2]], [0.85, 0.1, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
-                    self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
+  
+    def batch_reward_fn(self, obs):
+
+        # Observable Information
+        # obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel, cube_pos_diff]
+        
+        cube_pos = obs[:, :, :3]
+        cube_quat = obs[:, :, 3:7]
+        eef_pos = obs[:, :, 7:10]
+        eef_quat = obs[:, :, 10:14]
+        cube_vel = obs[:, :, 14:17]
+    
+        cube_pos_diff = obs[:, :, 17:20]
+        delta_pos = torch.norm(cube_pos_diff, dim=-1)
+        pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)  # Scale based on distance
+
+        cube_contact = cube_pos - eef_pos
+        contact_reward = 1.0 - torch.tanh(10.0 * torch.norm(cube_contact, dim=-1))
+
+        success_threshold = 0.05  # Success threshold for distance to goal
+        success_condition = delta_pos < success_threshold
+        success_reward = success_condition * self.max_episode_length
+
+        rewards = (self.reward_settings["r_pos_scale"] * pos_reward +
+                self.reward_settings["r_contact_scale"] * contact_reward + 
+                self.reward_settings["r_success_scale"] * success_reward)     
+        
+        return rewards.detach()                    
 
 #####################################################################
 ###=========================jit functions=========================###

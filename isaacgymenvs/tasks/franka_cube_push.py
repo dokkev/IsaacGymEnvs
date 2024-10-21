@@ -89,9 +89,6 @@ class FrankaCubePush(PrivInfoVecTask):
         
         # include priviliged information in the observation space
         self.include_priv_info = self.cfg["env"]["includePrivInfo"]
-
-        # Controller type (OSC or joint torques)
-        self.control_type = self.cfg["env"]["controlType"]
         assert self.control_type in {"osc", "joint_tor"},\
             "Invalid control type specified. Must be one of: {osc, joint_tor}"
 
