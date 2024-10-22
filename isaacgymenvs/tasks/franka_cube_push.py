@@ -119,9 +119,12 @@ class FrankaCubePush(PrivInfoVecTask):
 
         if self.cfg["env"]["variableImpedance"]:
             self.variable_imp = True
+            
             self.cfg["env"]["numActions"] += 6
         else:
             self.variable_imp = False
+            
+        self.impedance_range = self.cfg["env"]["impedanceRange"]
         
         # Values to be filled in at runtime
         self.states = {}                        # will be dict filled with relevant states to use for reward calculation
@@ -170,11 +173,11 @@ class FrankaCubePush(PrivInfoVecTask):
         # self.kp = to_torch([200.] * 6, device=self.device)
         # self.kd = 2 * torch.sqrt(self.kp)
 
+        kp_min = self.impedance_range[0]
+        kp_max = self.impedance_range[1]
         
-        self.kp_min = to_torch([100.0] * 6, device=self.device)
-        self.kp_max = to_torch([400.0] * 6, device=self.device)
-        self.kd_min = to_torch([10.0] * 6, device=self.device)
-        self.kd_max = to_torch([40.0] * 6, device=self.device)
+        self.kp_min = to_torch([kp_min] * 6, device=self.device)
+        self.kp_max = to_torch([kp_max] * 6, device=self.device)
 
         # Initialize kp and kd with default values
         self.kp = to_torch([200.] * 6, device=self.device)
@@ -740,6 +743,7 @@ class FrankaCubePush(PrivInfoVecTask):
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
                     self.kp = kp
                     self.kd = 2 * torch.sqrt(self.kp)
+                    
 
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
@@ -778,6 +782,7 @@ class FrankaCubePush(PrivInfoVecTask):
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
                     self.kp = kp
                     self.kd = 2 * torch.sqrt(self.kp)
+             
 
                 # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale

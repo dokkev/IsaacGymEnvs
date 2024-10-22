@@ -41,6 +41,7 @@ env:
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose6d # options are {pose3d, pose6d}
   variableImpedance: False
+  impedanceRange: [100, 400] # ignored if variableImpedance is False
 
   action_bias: 0.0 # add biased Gaussian nosie for sim-to-sim experiments
   action_var: 0.0
