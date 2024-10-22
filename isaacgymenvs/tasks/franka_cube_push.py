@@ -186,7 +186,11 @@ class FrankaCubePush(PrivInfoVecTask):
         # Set control limits
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
         self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
-        
+
+        # Action bias -- simulate unmodeled effects 
+        self.add_action_noise = self.cfg["env"]["action_bias"] > 0
+        self.action_bias = self.cfg["env"]["action_bias"]
+        self.action_var = self.cfg["env"]["action_var"]
 
         # Reset all environments
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -727,6 +731,10 @@ class FrankaCubePush(PrivInfoVecTask):
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
+
                 # Extract kp and kd
                 if self.variable_imp:
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
@@ -754,14 +762,16 @@ class FrankaCubePush(PrivInfoVecTask):
                 dpose[:, :3] = u_arm  # Set the position control to x, y, z
                 dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
 
-
-
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
 
             elif self.control_input == "pose6d":
                 # Similar extraction for pose6d
                 u_arm = self.actions[:, :6]  # First 6 actions for pose6d control
+
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
                 
                 # Update kp and kd
                 if self.variable_imp:
