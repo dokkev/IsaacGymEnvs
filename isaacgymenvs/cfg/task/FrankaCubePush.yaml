@@ -15,7 +15,7 @@ env:
   clipObservations: 5.0
   clipActions: 1.0
 
-  cubeInitPosNoise: 0.2
+  cubeInitPosNoise: 0.0
   cubeInitOriNoise: 3.14
   cubeGoalPosNoise: 0.2
   cubeGoalOriNoise: 0.0

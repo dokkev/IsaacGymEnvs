@@ -248,7 +248,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         table_thickness = 0.05
         table_opts = gymapi.AssetOptions()
         table_opts.fix_base_link = True
-        table_asset = self.gym.create_box(self.sim, *[1.2, 1.2, table_thickness], table_opts)
+        table_asset = self.gym.create_box(self.sim, *[4.0, 1.2, table_thickness], table_opts)
 
         # Create table stand asset
         table_stand_height = 0.1
@@ -690,7 +690,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         init_cube_xy_state = centered_cube_xy_state + torch.tensor([init_x_offset, init_y_offset], device=self.device, dtype=torch.float32)
         
         # add offset to the centered_cube_xy_state
-        goal_x_offset = 0.5
+        goal_x_offset = 1.5
         goal_y_offset = 0.0
         goal_cube_xy_state = centered_cube_xy_state + torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
 
@@ -793,7 +793,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
                     self.kp = kp
                     self.kd = 2 * torch.sqrt(self.kp)
-                    print("kp: ", kp)
+        
 
                 # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale
@@ -849,6 +849,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
                     p0 = pos[i].cpu().numpy()
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], px[0], px[1], px[2]], [0.85, 0.1, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
+                    self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
   
     def batch_reward_fn(self, obs):
 
@@ -893,6 +894,7 @@ def compute_franka_reward(
     cube_pos = states["cube_pos"]
     goal_pos = states["goal_cube_pos"]
     cube_vel = states["cube_vel"]
+    cube_to_eef_dist = torch.norm(states["cube_contact"], dim=-1)
     delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
 
     # 1. Distance Reward: Reward based on the distance between the cube and the goal
@@ -910,8 +912,8 @@ def compute_franka_reward(
 
     # 4. Contact Reward: Scale the contact reward inversely proportional to how close the cube is to the goal
     # When far from goal, the contact reward is higher, and when close, it converges to 0.
-    contact_scaling = torch.tanh(10.0 * delta_pos)  # Scaling factor based on distance (increase when far, decrease when close)
-    contact_reward = reward_settings["r_contact_scale"] * contact_scaling * (1.0 - torch.tanh(10.0 * torch.norm(states["cube_contact"], dim=-1)))
+    # contact_scaling = -torch.tanh(10.0 * (0.2 - delta_pos))  # Scaling factor based on distance (increase when far, decrease when close)
+    # contact_reward = reward_settings["r_contact_scale"] * contact_scaling * (1.0 - torch.tanh(10.0 * torch.norm(states["cube_contact"], dim=-1)))
 
     # 5. Cube Velocity Reward: Reward for cube velocity in the correct direction and magnitude
     goal_dir = goal_pos - cube_pos  # Direction from cube to goal
@@ -923,7 +925,7 @@ def compute_franka_reward(
     rewards = (distance_reward +
                success_reward + 
                ee_penalty +
-               contact_reward +
+            #    contact_reward +
                vel_reward)
 
     # Compute resets: reset the environment if the episode ends or the task is successfully completed

@@ -772,7 +772,7 @@ class FrankaCubePush(PrivInfoVecTask):
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
                     self.kp = kp
                     self.kd = 2 * torch.sqrt(self.kp)
-                    print("kp: ", kp)
+        
 
                 # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale

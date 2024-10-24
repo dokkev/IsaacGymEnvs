@@ -6,7 +6,7 @@ physics_engine: ${..physics_engine}
 # if given, will override the device setting in gym. 
 env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
-  envSpacing: 1.5
+  envSpacing: 2.5
   episodeLength: 300
   enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
@@ -15,9 +15,9 @@ env:
   clipObservations: 5.0
   clipActions: 1.0
 
-  cubeInitPosNoise: 0.
+  cubeInitPosNoise: 0.0
   cubeInitOriNoise: 0
-  cubeGoalPosNoise: 0.
+  cubeGoalPosNoise: 0.3
   cubeGoalOriNoise: 0.
 
   frankaPositionNoise: 0.0
@@ -43,7 +43,7 @@ env:
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose6d # options are {pose3d, pose6d}
   variableImpedance: True
-  impedanceRange: [100, 400] # ignored if variableImpedance is False
+  impedanceRange: [100, 1000] # ignored if variableImpedance is False
 
   asset:
     assetRoot: "../../assets"
