@@ -626,6 +626,33 @@ class FrankaReach(VecTask):
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
 
+    def batch_reward_fn(self, obs):
+
+        # Observable Information
+        # obs = [eef_pos, eef_quat, eef_goal_pos, eef_goal_quat]
+        
+        eef_pos = obs[:, :, :3]
+        eef_quat = obs[:, :, 3:7]
+        eef_goal_pos = obs[:, :, 7:10]
+        eef_goal_quat = obs[:, :, 10:14]
+
+        eef_goal_pos_dist = eef_goal_pos - eef_pos
+        eef_goal_quat_dist = eef_goal_quat - eef_quat
+
+        eef_goal_pos_dist = torch.norm(eef_goal_pos_dist, dim=-1)
+        eef_goal_pos_reward = 1.0 - torch.tanh(10.0 * eef_goal_pos_dist)
+        
+        # End Effector Orientation Reward
+        eef_goal_quat_dist = torch.norm(eef_goal_quat_dist, dim=-1)
+        eef_goal_quat_reward = 1.0 - torch.tanh(10.0 * eef_goal_quat_dist)
+
+        # Combine rewards with scaling factors
+        rewards = (self.reward_settings["r_eef_pos_reach_scale"] * eef_goal_pos_reward + 
+                   self.reward_settings["r_eef_ori_reach_scale"] * eef_goal_quat_reward)
+
+        
+        return rewards.detach()  
+
 #####################################################################
 ###=========================jit functions=========================###
 #####################################################################
