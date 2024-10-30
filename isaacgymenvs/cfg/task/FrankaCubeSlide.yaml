@@ -10,7 +10,7 @@ env:
   episodeLength: 300
   enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
-  includePrivInfo: True #include priv info in the observation
+  includePrivInfo: False #include priv info in the observation
 
   clipObservations: 5.0
   clipActions: 1.0
