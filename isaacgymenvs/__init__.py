@@ -20,8 +20,8 @@ def make(
     graphics_device_id: int = -1,
     headless: bool = False,
     multi_gpu: bool = False,
-    virtual_screen_capture: bool = False,
-    force_render: bool = True,
+    virtual_screen_capture: bool = True,
+    force_render: bool = False,
     cfg: DictConfig = None
 ): 
     from isaacgymenvs.utils.rlgames_utils import get_rlgames_env_creator
