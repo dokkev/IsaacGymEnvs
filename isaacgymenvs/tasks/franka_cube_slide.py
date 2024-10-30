@@ -6,7 +6,7 @@ from isaacgym import gymtorch
 from isaacgym import gymapi
 from isaacgym import gymutil
 
-from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate  
+from isaacgymenvs.utils.torch_jit_utils import quat_mul, quat_apply, to_torch, tensor_clamp, quat_conjugate, quat_to_angle_axis 
 from isaacgymenvs.tasks.base.priv_info_task import PrivInfoVecTask
 
 
@@ -892,7 +892,9 @@ def compute_franka_reward(
 
     # Compute distance from the cube to the goal position
     cube_pos = states["cube_pos"]
+    cube_quat = states["cube_quat"]
     goal_pos = states["goal_cube_pos"]
+    goal_quat = states["goal_cube_quat"]
     cube_vel = states["cube_vel"]
     cube_to_eef_dist = torch.norm(states["cube_contact"], dim=-1)
     delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
@@ -920,11 +922,27 @@ def compute_franka_reward(
     goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)  # Normalize
     vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)  # Projection of velocity along goal direction
     vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
+    
+    # 6. Orientation Reward only in x and y to prevent flipping (z can rotate freely)
+    # Convert quaternion to euler angles
+    # Compute the rotation difference as a quaternion
+    rotation_diff_quat = quat_mul(cube_quat, quat_conjugate(goal_quat))
+
+    # Convert the rotation difference to angle-axis representation
+    angle, axis = quat_to_angle_axis(rotation_diff_quat)
+
+    # Penalize deviations in the x and y components of the axis
+    # This will penalize roll (x) and pitch (y) components, allowing free rotation in yaw (z)
+    roll_pitch_penalty = torch.norm(axis[:, :2], dim=-1) * angle  # Use x and y components of the axis only
+    
+    orientation_reward = -reward_settings["r_ori_scale"] * roll_pitch_penalty
+
 
     # Combine rewards with scaling factors
     rewards = (distance_reward +
                success_reward + 
-               ee_penalty +
+               orientation_reward +
+            #    ee_penalty +
             #    contact_reward +
                vel_reward)
 
