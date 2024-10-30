@@ -30,8 +30,8 @@ env:
   actionScale: 1.0
 
   posRewardScale: 1.0
-  oriRewardScale: 0.0
-  velRewardScale: 1.0
+  oriRewardScale: 0.5
+  velRewardScale: 2.0
   contactRewardScale: 0.3
   successRewardScale: 100.0
   eefApproachPenaltyScale: 0.1
@@ -43,7 +43,7 @@ env:
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose6d # options are {pose3d, pose6d}
   variableImpedance: True
-  impedanceRange: [100, 1000] # ignored if variableImpedance is False
+  impedanceRange: [500, 2000] # ignored if variableImpedance is False
 
   asset:
     assetRoot: "../../assets"
@@ -145,7 +145,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 10.]
+            range: [0.1, 1.0]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -153,14 +153,14 @@ task:
             # schedule_steps: 30000
           com:
             # range: [[-0.02, 0.02], [-0.02, 0.02], [-0.01, 0.01]]
-            range: [-0.04, 0.04]
+            range: [-0.02, 0.02]
             distribution: "uniform"
             operation: "additive" 
 
         rigid_shape_properties:
           friction:
             num_buckets: 250
-            range: [0.1, 0.01]
+            range: [0.1, 1.0]
             operation: "scaling"
             distribution: "uniform"
 

@@ -924,18 +924,15 @@ def compute_franka_reward(
     vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
     
     # 6. Orientation Reward only in x and y to prevent flipping (z can rotate freely)
-    # Convert quaternion to euler angles
     # Compute the rotation difference as a quaternion
     rotation_diff_quat = quat_mul(cube_quat, quat_conjugate(goal_quat))
 
     # Convert the rotation difference to angle-axis representation
     angle, axis = quat_to_angle_axis(rotation_diff_quat)
 
-    # Penalize deviations in the x and y components of the axis
-    # This will penalize roll (x) and pitch (y) components, allowing free rotation in yaw (z)
-    roll_pitch_penalty = torch.norm(axis[:, :2], dim=-1) * angle  # Use x and y components of the axis only
-    
-    orientation_reward = -reward_settings["r_ori_scale"] * roll_pitch_penalty
+    # Reward for aligning roll and pitch (x and y components of the axis)
+    roll_pitch_alignment = torch.norm(axis[:, :2], dim=-1) * angle
+    orientation_reward = reward_settings["r_ori_scale"] * (1.0 - torch.tanh(5.0 * roll_pitch_alignment))
 
 
     # Combine rewards with scaling factors
