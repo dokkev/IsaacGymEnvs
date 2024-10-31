@@ -677,7 +677,7 @@ class FrankaCubePush(PrivInfoVecTask):
         sampled_goal_cube_state = torch.zeros(num_resets, 13, device=self.device)
 
         # Sample position and orientation for the cube
-        centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32)
+        centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32) 
         cube_height = self.states["cube_size"]
 
         # Set fixed z value based on table height and cube height
@@ -689,10 +689,18 @@ class FrankaCubePush(PrivInfoVecTask):
         sampled_goal_cube_state[:, 6] = 1.0
 
         # Sample x, y values with noise
-        sampled_init_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
-                                    2.0 * self.init_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
-        sampled_goal_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
-                                    2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        init_shift = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float32)
+        goal_shift = torch.tensor([0.0, 0.25], device=self.device, dtype=torch.float32)
+        sampled_init_cube_state[:, :2] = (
+            centered_cube_xy_state.unsqueeze(0) 
+            + init_shift 
+            + 2.0 * self.init_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        )
+        sampled_goal_cube_state[:, :2] = (
+            centered_cube_xy_state.unsqueeze(0) 
+            + goal_shift 
+            + 2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        )
 
         # Set the new sampled values as the initial state for the cube
         self._init_cube_state[env_ids, :] = sampled_init_cube_state
