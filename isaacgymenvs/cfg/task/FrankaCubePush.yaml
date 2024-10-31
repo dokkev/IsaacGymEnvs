@@ -15,8 +15,8 @@ env:
   clipObservations: 5.0
   clipActions: 1.0
 
-  cubeInitPosNoise: 0.2
-  cubeInitOriNoise: 3.14
+  cubeInitPosNoise: 0.0
+  cubeInitOriNoise: 0.0
   cubeGoalPosNoise: 0.2
   cubeGoalOriNoise: 0.0
 
@@ -160,8 +160,16 @@ task:
 
         rigid_shape_properties:
           friction:
-            num_buckets: 250
-            range: [0.1, 3.0]
+            num_buckets: 1
+            range: [1e-30, 1e-30]
             operation: "scaling"
-            distribution: "uniform"
+            distribution: "uniform"    
 
+      table:
+        color: False
+        rigid_shape_properties:
+          friction:
+            num_buckets: 1
+            range: [1e-30, 1e-30]
+            operation: "scaling"
+            distribution: "uniform"    

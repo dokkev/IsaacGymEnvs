@@ -785,7 +785,7 @@ class VecTask(Env):
                                 new_scale = og_scale + sample
                             self.gym.set_actor_scale(env, handle, new_scale)
                         continue
-
+                    
                     prop = param_getters_map[prop_name](env, handle)
                     set_random_properties = True
 
