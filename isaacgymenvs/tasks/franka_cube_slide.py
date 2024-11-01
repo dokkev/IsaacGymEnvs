@@ -884,6 +884,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 #####################################################################
 
 
+
 @torch.jit.script
 def compute_franka_reward(
     reset_buf, progress_buf, actions, states, reward_settings, max_episode_length
@@ -896,57 +897,55 @@ def compute_franka_reward(
     goal_pos = states["goal_cube_pos"]
     goal_quat = states["goal_cube_quat"]
     cube_vel = states["cube_vel"]
-    cube_to_eef_dist = torch.norm(states["cube_contact"], dim=-1)
     delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
 
-    # 1. Distance Reward: Reward based on the distance between the cube and the goal
-    distance_reward = reward_settings["r_pos_scale"] * 1.0 - torch.tanh(10.0 * delta_pos)  # Scaled based on the distance
+    # 1. Distance Reward
+    distance_reward = reward_settings["r_pos_scale"] * (1.0 - torch.tanh(10.0 * delta_pos))
 
-    # 2. Huge Reward for Success: Large reward when the cube is at the goal position
-    success_threshold = 0.05  # Success threshold for distance to goal
+    # 2. Success Reward
+    success_threshold = 0.05
     success_condition = delta_pos < success_threshold
-    success_reward = torch.where(success_condition, reward_settings["r_success_scale"] , torch.zeros_like(distance_reward))
+    success_reward = torch.where(success_condition, reward_settings["r_success_scale"], torch.zeros_like(distance_reward))
 
-    # 3. Penalty for End-Effector near the Goal: Penalize when the end effector is near the goal
-    ee_pos = states["eef_pos"]  # End-effector position
+    # 3. Penalty for End-Effector near the Goal
+    ee_pos = states["eef_pos"]
     ee_goal_dist = torch.norm(ee_pos - goal_pos, dim=-1)
     ee_penalty = -reward_settings["r_eef_approach_scale"] * torch.tanh(10.0 * ee_goal_dist)
 
-    # 4. Contact Reward: Scale the contact reward inversely proportional to how close the cube is to the goal
-    # When far from goal, the contact reward is higher, and when close, it converges to 0.
-    # contact_scaling = -torch.tanh(10.0 * (0.2 - delta_pos))  # Scaling factor based on distance (increase when far, decrease when close)
-    # contact_reward = reward_settings["r_contact_scale"] * contact_scaling * (1.0 - torch.tanh(10.0 * torch.norm(states["cube_contact"], dim=-1)))
-
-    # 5. Cube Velocity Reward: Reward for cube velocity in the correct direction and magnitude
-    goal_dir = goal_pos - cube_pos  # Direction from cube to goal
-    goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)  # Normalize
-    vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)  # Projection of velocity along goal direction
+    # 4. Cube Velocity Reward
+    goal_dir = goal_pos - cube_pos
+    goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)
+    vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)
     vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
     
-    # 6. Orientation Reward only in x and y to prevent flipping (z can rotate freely)
+    # 5. Orientation Reward only if the cube is not in the original position (using delta_pos)
+    move_threshold = 0.6  
+    has_moved = delta_pos < move_threshold
+
     # Compute the rotation difference as a quaternion
     rotation_diff_quat = quat_mul(cube_quat, quat_conjugate(goal_quat))
-
-    # Convert the rotation difference to angle-axis representation
     angle, axis = quat_to_angle_axis(rotation_diff_quat)
 
     # Reward for aligning roll and pitch (x and y components of the axis)
     roll_pitch_alignment = torch.norm(axis[:, :2], dim=-1) * angle
     orientation_reward = reward_settings["r_ori_scale"] * (1.0 - torch.tanh(5.0 * roll_pitch_alignment))
 
+    # Apply orientation reward only if the cube has moved
+    orientation_reward = torch.where(has_moved, orientation_reward, torch.zeros_like(orientation_reward))
 
-    # Combine rewards with scaling factors
+    # Combine rewards
     rewards = (distance_reward +
-               success_reward + 
+               success_reward +
                orientation_reward +
             #    ee_penalty +
             #    contact_reward +
                vel_reward)
 
-    # Compute resets: reset the environment if the episode ends or the task is successfully completed
+    # Compute resets
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
     
     return rewards.detach(), reset_buf, success_condition
+
 
 
 

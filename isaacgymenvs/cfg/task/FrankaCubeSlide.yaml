@@ -29,9 +29,9 @@ env:
 
   actionScale: 1.0
 
-  posRewardScale: 1.0
+  posRewardScale: 2.0
   oriRewardScale: 0.5
-  velRewardScale: 2.0
+  velRewardScale: 0.5
   contactRewardScale: 0.3
   successRewardScale: 100.0
   eefApproachPenaltyScale: 0.1
@@ -93,7 +93,7 @@ task:
       # schedule_steps: 40000
     sim_params: 
       gravity:
-        range: [-0.2, 0.2]
+        range: [-0.01, 0.01]
         operation: "additive"
         distribution: "gaussian"
         # schedule: "linear"  # "linear" will linearly interpolate between no rand and max rand
@@ -145,7 +145,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 1.0]
+            range: [0.1, 0.5]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -160,7 +160,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 250
-            range: [0.1, 1.0]
+            range: [0.01, 0.1]
             operation: "scaling"
             distribution: "uniform"
 
