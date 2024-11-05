@@ -253,6 +253,10 @@ class FrankaCubePush(PrivInfoVecTask):
         table_opts = gymapi.AssetOptions()
         table_opts.fix_base_link = True
         table_asset = self.gym.create_box(self.sim, *[1.2, 1.2, table_thickness], table_opts)
+        rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
+        for element in rigid_shape_props_asset:
+            element.friction = 0.01
+        self.gym.set_asset_rigid_shape_properties(table_asset, rigid_shape_props_asset)
 
         # Create table stand asset
         table_stand_height = 0.1
@@ -558,8 +562,6 @@ class FrankaCubePush(PrivInfoVecTask):
             #  store prvi info in priv_info_buf [[env_id], [mass, friction, com_x, com_y, com_z]]
             self._store_priv_info(env_ids)
             
-
-        
         env_ids_int32 = env_ids.to(dtype=torch.int32)
 
         # if not self._i:
@@ -627,6 +629,11 @@ class FrankaCubePush(PrivInfoVecTask):
             cube_handle = self.gym.find_actor_handle(env_ptr, "cube")
             cube_rb_props = self.gym.get_actor_rigid_body_properties(env_ptr, cube_handle)
             cube_shape_props = self.gym.get_actor_rigid_shape_properties(env_ptr, cube_handle)
+
+            table_shape_props = self.gym.get_actor_rigid_shape_properties(
+                env_ptr,
+                self.gym.find_actor_handle(env_ptr, "table")
+            )
             
             #isaacgym.gymapi.RigidBodyProperties
             for i, rb_prop in enumerate(cube_rb_props):
@@ -637,6 +644,13 @@ class FrankaCubePush(PrivInfoVecTask):
             #isaacgym.gymapi.RigidShapeProperties
             for i, shape_prop in enumerate(cube_shape_props):
                 cube_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
+            
+            for i, shape_prop in enumerate(table_shape_props):
+                table_friction = shape_prop.friction
                 # cube_rolling_friction = shape_prop.rolling_friction
                 # cube_torsion_friction = shape_prop.torsion_friction
                 # cube_compliance = shape_prop.compliance
@@ -655,6 +669,7 @@ class FrankaCubePush(PrivInfoVecTask):
                 print(f"  Mass = {cube_mass}")
                 print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
                 print(f"  Friction = {cube_friction}")
+                print(f"  Table Friction = {table_friction}")
                 # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
             
