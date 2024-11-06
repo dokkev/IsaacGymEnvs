@@ -420,7 +420,7 @@ class FrankaReach(VecTask):
         self._update_states()
 
     def compute_reward(self, actions):
-        self.rew_buf[:], self.reset_buf[:] = compute_franka_reward(
+        self.rew_buf[:], self.reset_buf[:], self.extras['success']  = compute_franka_reward(
             self.reset_buf, self.progress_buf, self.actions, self.states, self.reward_settings, self.max_episode_length
         )
 
@@ -626,16 +626,43 @@ class FrankaReach(VecTask):
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
                     self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
 
+    def batch_reward_fn(self, obs):
+
+        # Observable Information
+        # obs = [eef_pos, eef_quat, eef_goal_pos, eef_goal_quat]
+        
+        eef_pos = obs[:, :, :3]
+        eef_quat = obs[:, :, 3:7]
+        eef_goal_pos = obs[:, :, 7:10]
+        eef_goal_quat = obs[:, :, 10:14]
+
+        eef_goal_pos_dist = eef_goal_pos - eef_pos
+        eef_goal_quat_dist = eef_goal_quat - eef_quat
+
+        eef_goal_pos_dist = torch.norm(eef_goal_pos_dist, dim=-1)
+        eef_goal_pos_reward = 1.0 - torch.tanh(10.0 * eef_goal_pos_dist)
+        
+        # End Effector Orientation Reward
+        eef_goal_quat_dist = torch.norm(eef_goal_quat_dist, dim=-1)
+        eef_goal_quat_reward = 1.0 - torch.tanh(10.0 * eef_goal_quat_dist)
+
+        # Combine rewards with scaling factors
+        rewards = (self.reward_settings["r_eef_pos_reach_scale"] * eef_goal_pos_reward + 
+                   self.reward_settings["r_eef_ori_reach_scale"] * eef_goal_quat_reward)
+
+        
+        return rewards.detach()  
+
 #####################################################################
 ###=========================jit functions=========================###
 #####################################################################
 
 
-@torch.jit.script
+# @torch.jit.script
 def compute_franka_reward(
     reset_buf, progress_buf, actions, states, reward_settings, max_episode_length
 ):
-    # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor]
+    # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
 
     # TODO: Jerk Reward: Penalize large changes in actions
@@ -655,13 +682,12 @@ def compute_franka_reward(
 
               
     # Compute state distance to goal (append pos and quat distances)
-    eef_goal_dist = torch.cat([eef_goal_pos_dist, eef_goal_quat_dist])
+    eef_goal_dist = torch.cat([eef_goal_pos_dist.unsqueeze(1), eef_goal_quat_dist.unsqueeze(1)], dim=-1)
     eef_goal_dist = torch.norm(eef_goal_dist, dim=-1)
-    
+
     # Compute resets: reset the environment if the episode ends or the task is successfully completed
     success_threshold = 0.05  # Success threshold for distance to goal
     success_condition = eef_goal_dist < success_threshold
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
-
-    return rewards.detach(), reset_buf
+    return rewards.detach(), reset_buf, success_condition
 

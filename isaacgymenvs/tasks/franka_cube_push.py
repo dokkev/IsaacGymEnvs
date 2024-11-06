@@ -186,7 +186,11 @@ class FrankaCubePush(PrivInfoVecTask):
         # Set control limits
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
         self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
-        
+
+        # Action bias -- simulate unmodeled effects 
+        self.add_action_noise = self.cfg["env"]["action_bias"] > 0
+        self.action_bias = self.cfg["env"]["action_bias"]
+        self.action_var = self.cfg["env"]["action_var"]
 
         # Reset all environments
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -246,6 +250,10 @@ class FrankaCubePush(PrivInfoVecTask):
         table_opts = gymapi.AssetOptions()
         table_opts.fix_base_link = True
         table_asset = self.gym.create_box(self.sim, *[1.2, 1.2, table_thickness], table_opts)
+        rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
+        for element in rigid_shape_props_asset:
+            element.friction = 0.01
+        self.gym.set_asset_rigid_shape_properties(table_asset, rigid_shape_props_asset)
 
         # Create table stand asset
         table_stand_height = 0.1
@@ -551,8 +559,6 @@ class FrankaCubePush(PrivInfoVecTask):
             #  store prvi info in priv_info_buf [[env_id], [mass, friction, com_x, com_y, com_z]]
             self._store_priv_info(env_ids)
             
-
-        
         env_ids_int32 = env_ids.to(dtype=torch.int32)
 
         # if not self._i:
@@ -620,6 +626,11 @@ class FrankaCubePush(PrivInfoVecTask):
             cube_handle = self.gym.find_actor_handle(env_ptr, "cube")
             cube_rb_props = self.gym.get_actor_rigid_body_properties(env_ptr, cube_handle)
             cube_shape_props = self.gym.get_actor_rigid_shape_properties(env_ptr, cube_handle)
+
+            table_shape_props = self.gym.get_actor_rigid_shape_properties(
+                env_ptr,
+                self.gym.find_actor_handle(env_ptr, "table")
+            )
             
             #isaacgym.gymapi.RigidBodyProperties
             for i, rb_prop in enumerate(cube_rb_props):
@@ -630,6 +641,13 @@ class FrankaCubePush(PrivInfoVecTask):
             #isaacgym.gymapi.RigidShapeProperties
             for i, shape_prop in enumerate(cube_shape_props):
                 cube_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
+            
+            for i, shape_prop in enumerate(table_shape_props):
+                table_friction = shape_prop.friction
                 # cube_rolling_friction = shape_prop.rolling_friction
                 # cube_torsion_friction = shape_prop.torsion_friction
                 # cube_compliance = shape_prop.compliance
@@ -648,6 +666,7 @@ class FrankaCubePush(PrivInfoVecTask):
                 print(f"  Mass = {cube_mass}")
                 print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
                 print(f"  Friction = {cube_friction}")
+                print(f"  Table Friction = {table_friction}")
                 # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
             
@@ -670,7 +689,7 @@ class FrankaCubePush(PrivInfoVecTask):
         sampled_goal_cube_state = torch.zeros(num_resets, 13, device=self.device)
 
         # Sample position and orientation for the cube
-        centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32)
+        centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32) 
         cube_height = self.states["cube_size"]
 
         # Set fixed z value based on table height and cube height
@@ -682,10 +701,18 @@ class FrankaCubePush(PrivInfoVecTask):
         sampled_goal_cube_state[:, 6] = 1.0
 
         # Sample x, y values with noise
-        sampled_init_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
-                                    2.0 * self.init_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
-        sampled_goal_cube_state[:, :2] = centered_cube_xy_state.unsqueeze(0) + \
-                                    2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        init_shift = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float32)
+        goal_shift = torch.tensor([0.0, 0.25], device=self.device, dtype=torch.float32)
+        sampled_init_cube_state[:, :2] = (
+            centered_cube_xy_state.unsqueeze(0) 
+            + init_shift 
+            + 2.0 * self.init_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        )
+        sampled_goal_cube_state[:, :2] = (
+            centered_cube_xy_state.unsqueeze(0) 
+            + goal_shift 
+            + 2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
+        )
 
         # Set the new sampled values as the initial state for the cube
         self._init_cube_state[env_ids, :] = sampled_init_cube_state
@@ -730,6 +757,10 @@ class FrankaCubePush(PrivInfoVecTask):
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
+
                 # Extract kp and kd
                 if self.variable_imp:
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
@@ -758,14 +789,16 @@ class FrankaCubePush(PrivInfoVecTask):
                 dpose[:, :3] = u_arm  # Set the position control to x, y, z
                 dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
 
-
-
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
 
             elif self.control_input == "pose6d":
                 # Similar extraction for pose6d
                 u_arm = self.actions[:, :6]  # First 6 actions for pose6d control
+
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
                 
                 # Update kp and kd
                 if self.variable_imp:
