@@ -80,7 +80,9 @@ class FrankaCubePush(PrivInfoVecTask):
             "r_pos_scale": self.cfg["env"]["posRewardScale"],
             "r_ori_scale": self.cfg["env"]["oriRewardScale"],
             "r_contact_scale": self.cfg["env"]["contactRewardScale"],
-            "r_success_scale": self.cfg["env"]["successRewardScale"]
+            "r_success_scale": self.cfg["env"]["successRewardScale"],
+            "success_threshold": 0.05,
+            "n_hold_steps": 50,
         }
         
         # print messages for priv info for each env
@@ -437,6 +439,7 @@ class FrankaCubePush(PrivInfoVecTask):
         # Initialize states
         self.states.update({
             "cube_size": torch.ones_like(self._eef_state[:, 0]) * self.cube_size,
+            "hold_counters": torch.zeros(self.num_envs, device=self.device)
         })
         
 
@@ -453,6 +456,8 @@ class FrankaCubePush(PrivInfoVecTask):
                                            device=self.device).view(self.num_envs, -1)
 
     def _update_states(self):
+        dists = self._goal_cube_state[:, :3] - self._cube_state[:, :3]
+        dists_norm = torch.norm(dists, dim=-1)
         self.states.update({
             # Franka 
             "q": self._q[:, :],
@@ -471,7 +476,12 @@ class FrankaCubePush(PrivInfoVecTask):
             
             "goal_cube_pos": self._goal_cube_state[:, :3],
             "goal_cube_quat": self._goal_cube_state[:, 3:7],
-            "cube_to_goal_cube_pos": self._goal_cube_state[:, :3] - self._cube_state[:, :3],
+            "cube_to_goal_cube_pos": dists ,
+            "hold_counters": torch.where(
+                dists_norm < self.reward_settings["success_threshold"],
+                self.states["hold_counters"] + 1, 
+                0
+            )
             
         })
 
@@ -614,6 +624,7 @@ class FrankaCubePush(PrivInfoVecTask):
         
         self.progress_buf[env_ids] = 0
         self.reset_buf[env_ids] = 0
+        self.states["hold_counters"][env_ids] = 0
         
         # visualize goal cube state
         axes_geom = gymutil.AxesGeometry(0.1)
@@ -877,8 +888,7 @@ class FrankaCubePush(PrivInfoVecTask):
         cube_contact = cube_pos - eef_pos
         contact_reward = 1.0 - torch.tanh(10.0 * torch.norm(cube_contact, dim=-1))
 
-        success_threshold = 0.05  # Success threshold for distance to goal
-        success_condition = delta_pos < success_threshold
+        success_condition = delta_pos < reward_settings["success_threshold"]
         success_reward = success_condition * self.max_episode_length
 
         rewards = (self.reward_settings["r_pos_scale"] * pos_reward +
@@ -894,7 +904,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
 @torch.jit.script
 def compute_franka_reward(
-    reset_buf, progress_buf, actions, states, reward_settings, max_episode_length
+    reset_buf, progress_buf, actions, states, reward_settings, max_episode_length,
 ):
     # type: (Tensor, Tensor, Tensor, Dict[str, Tensor], Dict[str, float], float) -> Tuple[Tensor, Tensor, Tensor]
 
@@ -904,8 +914,8 @@ def compute_franka_reward(
     delta_pos = torch.norm(cube_pos - goal_pos, dim=-1)
 
     # Compute resets: reset the environment if the episode ends or the task is successfully completed
-    success_threshold = 0.05  # Success threshold for distance to goal
-    success_condition = delta_pos < success_threshold
+    # success_condition = delta_pos < reward_settings["success_threshold"]
+    success_condition = states["hold_counters"] > reward_settings["n_hold_steps"]
 
     # 1. Position Reward: Reward for getting closer to the goal
     pos_reward = 1.0 - torch.tanh(10.0 * delta_pos)  # Scale based on distance
