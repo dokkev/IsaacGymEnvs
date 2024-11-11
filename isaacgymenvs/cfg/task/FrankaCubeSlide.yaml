@@ -8,16 +8,16 @@ env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 2.5
   episodeLength: 300
-  enableDebugVis: False
+  enableDebugVis: True
   enablePrivInfoPrint: False # it won't print if randomize is false
-  includePrivInfo: False #include priv info in the observation
+  includePrivInfo: True #include priv info in the observation
 
   clipObservations: 5.0
   clipActions: 1.0
 
   cubeInitPosNoise: 0.2
   cubeInitOriNoise: 0
-  cubeGoalPosNoise: 0.3
+  cubeGoalPosNoise: 0.5
   cubeGoalOriNoise: 0.
 
   frankaPositionNoise: 0.0
@@ -43,7 +43,7 @@ env:
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose6d # options are {pose3d, pose6d}
   variableImpedance: True
-  impedanceRange: [500, 2000] # ignored if variableImpedance is False
+  impedanceRange: [10, 1000] # ignored if variableImpedance is False
 
   asset:
     assetRoot: "../../assets"
@@ -93,7 +93,7 @@ task:
       # schedule_steps: 40000
     sim_params: 
       gravity:
-        range: [-0.01, 0.01]
+        range: [0.00, 0.00]
         operation: "additive"
         distribution: "gaussian"
         # schedule: "linear"  # "linear" will linearly interpolate between no rand and max rand
@@ -103,32 +103,32 @@ task:
       franka:
         dof_properties:
           damping:
-            range: [0.1, 0.5]
+            range: [1.0, 1.0]
             operation: "scaling"
             distribution: "loguniform"
             # schedule: "linear"  # "linear" will scale the current random sample by `min(current num steps, schedule_steps) / schedule_steps`
             # schedule_steps: 30000
           stiffness:
-            range: [0.1, 0.5]
+            range: [1.0, 1.0]
             operation: "scaling"
             distribution: "loguniform"
             # schedule: "linear"  # "linear" will scale the current random sample by `min(current num steps, schedule_steps) / schedule_steps`
             # schedule_steps: 30000
           lower: #lower limit of DOF (rad or m)
-            range: [-0.01, 0.01]
+            range: [0.00, 0.00]
             operation: "additive"
             distribution: "gaussian"
             # schedule: "linear"  # "linear" will scale the current random sample by `min(current num steps, schedule_steps) / schedule_steps`
             # schedule_steps: 30000
           upper: #upper limit of DOF (rad or m)
-            range: [-0.01, 0.01]
+            range: [0.00, 0.00]
             operation: "additive"
             distribution: "gaussian"
             # schedule: "linear"  # "linear" will scale the current random sample by `min(current num steps, schedule_steps) / schedule_steps`
             # schedule_steps: 30000
         rigid_body_properties:
           mass:
-            range: [0.8, 1.2]
+            range: [1.0, 1.0]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -137,7 +137,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 250
-            range: [0.9, 1.1]
+            range: [1.0, 1.0]
             operation: "scaling"
             distribution: "uniform"
       
@@ -145,7 +145,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 0.5]
+            range: [0.1, 0.1]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -153,14 +153,14 @@ task:
             # schedule_steps: 30000
           com:
             # range: [[-0.02, 0.02], [-0.02, 0.02], [-0.01, 0.01]]
-            range: [-0.02, 0.02]
+            range: [0.00, 0.00]
             distribution: "uniform"
             operation: "additive" 
 
         rigid_shape_properties:
           friction:
             num_buckets: 250
-            range: [0.01, 0.1]
+            range: [0.05, 0.05]
             operation: "scaling"
             distribution: "uniform"
 

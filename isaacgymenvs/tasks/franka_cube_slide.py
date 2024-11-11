@@ -244,11 +244,12 @@ class FrankaCubeSlide(PrivInfoVecTask):
         franka_dof_damping = to_torch([0, 0, 0, 0, 0, 0, 0, 1.0e2, 1.0e2], dtype=torch.float, device=self.device)
 
         # Create table asset
-        table_pos = [0.0, 0.0, 1.0]
+        table_x_offset = 1.0
+        table_pos = [table_x_offset, 0.0, 1.0]
         table_thickness = 0.05
         table_opts = gymapi.AssetOptions()
         table_opts.fix_base_link = True
-        table_asset = self.gym.create_box(self.sim, *[4.0, 1.2, table_thickness], table_opts)
+        table_asset = self.gym.create_box(self.sim, *[4.5, 1.2, table_thickness], table_opts)
 
         # Create table stand asset
         table_stand_height = 0.1
@@ -256,6 +257,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
         table_stand_opts = gymapi.AssetOptions()
         table_stand_opts.fix_base_link = True
         table_stand_asset = self.gym.create_box(self.sim, *[0.2, 0.2, table_stand_height], table_opts)
+        rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
+        for element in rigid_shape_props_asset:
+            element.friction = 0.01
+        self.gym.set_asset_rigid_shape_properties(table_asset, rigid_shape_props_asset)
 
 
         cube_color = gymapi.Vec3(0.6, 0.1, 0.0)
@@ -632,6 +637,11 @@ class FrankaCubeSlide(PrivInfoVecTask):
             cube_rb_props = self.gym.get_actor_rigid_body_properties(env_ptr, cube_handle)
             cube_shape_props = self.gym.get_actor_rigid_shape_properties(env_ptr, cube_handle)
             
+            table_shape_props = self.gym.get_actor_rigid_shape_properties(
+                env_ptr,
+                self.gym.find_actor_handle(env_ptr, "table")
+            )
+            
             #isaacgym.gymapi.RigidBodyProperties
             for i, rb_prop in enumerate(cube_rb_props):
                 cube_mass = rb_prop.mass # float (kg)
@@ -645,6 +655,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 # cube_torsion_friction = shape_prop.torsion_friction
                 # cube_compliance = shape_prop.compliance
                 # cube_restitution = shape_prop.restitution # [0,1]
+            
+            for i, shape_prop in enumerate(table_shape_props):
+                table_friction = shape_prop.friction
+    
                 
             # store in priv_info_buf
             self.priv_info_buf[env_id, 0] = cube_mass
@@ -659,6 +673,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 print(f"  Mass = {cube_mass}")
                 print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
                 print(f"  Friction = {cube_friction}")
+                print(f"  Table Friction = {table_friction}")
                 # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
             
@@ -685,7 +700,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         cube_height = self.states["cube_size"]
         
         # add offet to the centered_cube_xy_state
-        init_x_offset = -0.1
+        init_x_offset = -0.1 - 1.0
         init_y_offset = 0.0
         init_cube_xy_state = centered_cube_xy_state + torch.tensor([init_x_offset, init_y_offset], device=self.device, dtype=torch.float32)
         
@@ -904,7 +919,13 @@ def compute_franka_reward(
 
     # 2. Success Reward
     success_threshold = 0.05
-    success_condition = delta_pos < success_threshold
+    # success condition is True if the cube is within the success threshold and velocity is below a certain threshold
+    terminal_velocity_threshold = 0.001
+    
+    # Fixed: specify p=2 for L2 norm (Euclidean norm)
+    success_condition1 = torch.norm(cube_vel, p=2, dim=-1) < terminal_velocity_threshold
+    success_condition2 = delta_pos < success_threshold 
+    success_condition = success_condition1 & success_condition2  # Combined success condition
     success_reward = torch.where(success_condition, reward_settings["r_success_scale"], torch.zeros_like(distance_reward))
 
     # 3. Penalty for End-Effector near the Goal
