@@ -77,7 +77,7 @@ sim:
 task:
   randomize: False
   randomization_params:
-    frequency: 720   # Define how many simulation steps between generating new randomizations
+    frequency: 1   # Define how many simulation steps between generating new randomizations
     observations:
       range: [0, .002] # range for the white noise
       range_correlated: [0, .001] # range for correlated noise, refreshed with freq `frequency`
@@ -161,7 +161,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.01, 3.0]
+            range: [0.01, 5]
             operation: "scaling"
             distribution: "uniform"
 
