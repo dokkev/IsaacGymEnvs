@@ -81,8 +81,8 @@ class FrankaCubePush(PrivInfoVecTask):
             "r_ori_scale": self.cfg["env"]["oriRewardScale"],
             "r_contact_scale": self.cfg["env"]["contactRewardScale"],
             "r_success_scale": self.cfg["env"]["successRewardScale"],
+            "n_hold_steps": self.cfg["env"]["nHoldSteps"],
             "success_threshold": 0.05,
-            "n_hold_steps": 50,
         }
         
         # print messages for priv info for each env
@@ -116,6 +116,8 @@ class FrankaCubePush(PrivInfoVecTask):
             self.cfg["env"]["numActions"] = 3 
         elif self.control_input == "pose2d":
             self.cfg["env"]["numActions"] = 2 
+        elif self.control_input == "primitive": 
+            self.cfg["env"]["numActions"] = 4
         else: # pose6d
             self.cfg["env"]["numActions"] = 6 
 
@@ -127,35 +129,38 @@ class FrankaCubePush(PrivInfoVecTask):
             self.variable_imp = False
             
         self.impedance_range = self.cfg["env"]["impedanceRange"]
+
+        assert not (self.control_input == "primitive" and self.variable_imp)
         
         # Values to be filled in at runtime
         self.states = {}                        # will be dict filled with relevant states to use for reward calculation
         self.handles = {}                       # will be dict mapping names to relevant sim handles
         self.num_dofs = None                    # Total number of DOFs per env
         self.actions = None                     # Current actions to be deployed
-        self._init_cube_state = None           # Initial state of cube for the current env
-        self._cube_state = None                # Current state of cube for the current env
-        self._goal_cube_state = None           # Goal state of cube for the current env
-        self._cube_id = None                   # Actor ID corresponding to cube for a given env
-        self._eef_goal_state = None            # Goal state of end effector
+        self._init_cube_state = None            # Initial state of cube for the current env
+        self._cube_state = None                 # Current state of cube for the current env
+        self._goal_cube_state = None            # Goal state of cube for the current env
+        self._cube_id = None                    # Actor ID corresponding to cube for a given env
+        self._eef_goal_state = None             # Goal state of end effector
+        self.quat_desired = None                # Quaternion target for fixed ori control
 
         
         # Tensor placeholders
-        self._root_state = None             # State of root body        (n_envs, 13)
-        self._dof_state = None  # State of all joints       (n_envs, n_dof)
-        self._q = None  # Joint positions           (n_envs, n_dof)
-        self._qd = None                     # Joint velocities          (n_envs, n_dof)
-        self._rigid_body_state = None  # State of all rigid bodies             (n_envs, n_bodies, 13)
-        self._contact_forces = None     # Contact forces in sim
-        self._eef_state = None  # end effector state (at grasping point)
-        self._finger_state = None  # finger state
-        self._j_eef = None  # Jacobian for end effector
-        self._mm = None  # Mass matrix
-        self._arm_control = None  # Tensor buffer for controlling arm
-        self._pos_control = None            # Position actions
-        self._effort_control = None         # Torque actions
-        self._franka_effort_limits = None        # Actuator effort limits for franka
-        self._global_indices = None         # Unique indices corresponding to all envs in flattened array
+        self._root_state = None                 # State of root body        (n_envs, 13)
+        self._dof_state = None                  # State of all joints       (n_envs, n_dof)
+        self._q = None                          # Joint positions           (n_envs, n_dof)
+        self._qd = None                         # Joint velocities          (n_envs, n_dof)
+        self._rigid_body_state = None           # State of all rigid bodies             (n_envs, n_bodies, 13)
+        self._contact_forces = None             # Contact forces in sim
+        self._eef_state = None                  # end effector state (at grasping point)
+        self._finger_state = None               # finger state
+        self._j_eef = None                      # Jacobian for end effector
+        self._mm = None                         # Mass matrix
+        self._arm_control = None                # Tensor buffer for controlling arm
+        self._pos_control = None                # Position actions
+        self._effort_control = None             # Torque actions
+        self._franka_effort_limits = None       # Actuator effort limits for franka
+        self._global_indices = None             # Unique indices corresponding to all envs in flattened array
 
         self.debug_viz = self.cfg["env"]["enableDebugVis"]
 
@@ -166,9 +171,18 @@ class FrankaCubePush(PrivInfoVecTask):
         super().__init__(config=self.cfg, rl_device=rl_device, sim_device=sim_device, graphics_device_id=graphics_device_id, headless=headless, virtual_screen_capture=virtual_screen_capture, force_render=force_render)
 
         # Franka defaults
-        self.franka_default_dof_pos = to_torch(
-            [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.001, 0.001], device=self.device
-        )
+
+        if self.control_input == 'pose2d':
+            self.franka_default_dof_pos = to_torch(
+                [-7.5521e-02,  7.5651e-01, -4.7575e-02, -2.3285e+00,  5.1002e-01,
+                3.0750e+00,  1.6528e-01,  1.0002e-03,  9.9984e-04], 
+                device=self.device
+            )
+        else: 
+            self.franka_default_dof_pos = to_torch(
+                [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.001, 0.001], 
+                device=self.device
+            )
 
         # OSC Gains 
         # set default gains
@@ -183,6 +197,9 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # Initialize kp and kd with default values
         self.kp = to_torch([200.] * 6, device=self.device)
+        if self.control_input == 'primitive':
+            self.kp[-3:] = 500.
+
         self.kd = 2 * torch.sqrt(self.kp)
         self.kp_null = to_torch([10.] * 7, device=self.device)
         self.kd_null = 2 * torch.sqrt(self.kp_null)
@@ -190,12 +207,18 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # Set control limits
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
-        self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
+            self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
+
+        self.prim_cmd_limit = to_torch([0.15, 0.15, 0.1, 0.1], device=self.device).unsqueeze(0)
 
         # Action bias -- simulate unmodeled effects 
         self.add_action_noise = self.cfg["env"]["action_bias"] > 0
         self.action_bias = self.cfg["env"]["action_bias"]
         self.action_var = self.cfg["env"]["action_var"]
+
+        # Hardcode table height and safe height for pose2d, primitive action spaces
+        self.table_z_height = 1.0450 + 0.1
+        self.safe_height = 1.3171
 
         # Reset all environments
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -521,8 +544,6 @@ class FrankaCubePush(PrivInfoVecTask):
         # Include priv info in the observation space
         if self.include_priv_info:
             obs.append(self.priv_info_buf)
-            
-          
 
         # Concatenate all observations
         self.obs_buf = torch.cat(obs, dim=-1)
@@ -761,9 +782,54 @@ class FrankaCubePush(PrivInfoVecTask):
         return u
 
     def pre_physics_step(self, actions):
+
         self.actions = actions.clone().to(self.device)
 
+        # grab initial orientation for fixed ori control 
+        if self.quat_desired is None: 
+            self.quat_desired = torch.zeros_like(self.states['eef_quat'])
+            self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
+
         if self.control_type == "osc":
+
+            if self.control_input == "pose2d":
+                u_arm = self.actions[:, :2]  # First 2 actions for 2D position control
+
+                # z_error, constant height
+                z_error = self.table_z_height - self.states["eef_pos"][:, 2]
+                
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
+
+                # Extract kp and kd
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 2:4])  # Actions 2 to 4 (2)
+                    self.kp[:2] = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
+
+                # Scale the position control
+                u_arm = u_arm * self.cmd_limit[:, :2] / self.action_scale
+
+                # Fixed orientation 
+                if self._steps_elapsed == 0:
+                    ori_error = torch.zeros((self.num_envs, 3), device=self.device)
+                else: 
+                    eef_rot = self.states["eef_quat"]
+                    q_error = quat_mul(self.quat_desired, quat_conjugate(eef_rot))
+                    angle, axis = quat_to_angle_axis(q_error)
+                    ori_error = angle.unsqueeze(1) * axis
+                self._steps_elapsed += 1 
+
+                # Prepare dpose (6D: position + orientation)
+                dpose = torch.zeros((self.num_envs, 6), device=self.device)
+                dpose[:, :2] = u_arm  # Set the position control to x, y, z
+                dpose[:, 2] = z_error
+                dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
+
+                # Compute OSC torques with variable kp and kd
+                u_arm = self._compute_osc_torques(dpose=dpose)
+
             if self.control_input == "pose3d":
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
@@ -787,10 +853,7 @@ class FrankaCubePush(PrivInfoVecTask):
                     ori_error = torch.zeros((self.num_envs, 3), device=self.device)
                 else: 
                     eef_rot = self.states["eef_quat"]
-                    if self._steps_elapsed == 1: 
-                        self.q_desired = copy.deepcopy(eef_rot)
-
-                    q_error = quat_mul(self.q_desired, quat_conjugate(eef_rot))
+                    q_error = quat_mul(self.quat_desired, quat_conjugate(eef_rot))
                     angle, axis = quat_to_angle_axis(q_error)
                     ori_error = angle.unsqueeze(1) * axis
                 self._steps_elapsed += 1 
@@ -830,7 +893,168 @@ class FrankaCubePush(PrivInfoVecTask):
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
 
+    def go_to_pos(self, xyz_target, epsilon=1e-3, max_steps=50):
+        
+        # step primitive to target xy 
+        for i in range(max_steps):
 
+            self._refresh() 
+            eef_pos=self.states["eef_pos"]
+            eef_quat=self.states["eef_quat"]
+
+            if torch.all(torch.norm(xyz_target - eef_pos, dim=-1) < epsilon): 
+                break
+
+            q_error = quat_mul(self.quat_desired, quat_conjugate(eef_quat))
+            angle, axis = quat_to_angle_axis(q_error)
+            ori_error = angle.unsqueeze(1) * axis
+
+            dpose = torch.zeros((self.num_envs, 6), device=self.device)
+            dpose[:, :3] = xyz_target - eef_pos 
+            dpose[:, 3:] = ori_error 
+
+            # Compute OSC torques with variable kp and kd
+            u_arm = self._compute_osc_torques(dpose=dpose)
+            self._arm_control[:, :] = u_arm  # Apply control with variable kp and kd
+
+            # Deploy actions
+            self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
+            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
+
+            if self.force_render:
+                self.render()
+            
+            self.gym.simulate(self.sim)
+
+
+    def primitive_step(self, actions: torch.Tensor): 
+
+        actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+        actions = actions * self.prim_cmd_limit / self.action_scale
+
+        if self.quat_desired is None: 
+            self.quat_desired = torch.zeros_like(self.states['eef_quat'])
+            self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
+
+        # parse action
+        xy_start = actions[:, :2]
+        xy_target = xy_start + actions[:, 2:4]
+
+        # capture initial push state 
+        og_eef_pos=self.states["eef_pos"]
+        og_eef_quat=self.states["eef_quat"]
+
+        # format move target 
+        move_target = torch.zeros(self.num_envs, 3, device=self.device)
+        move_target[:,:2] = xy_start
+        move_target[:, 2] = self.safe_height
+        self.go_to_pos(move_target)
+
+        # format pre goal 
+        pre_target = torch.zeros(self.num_envs, 3, device=self.device)
+        pre_target[:,:2] = xy_start
+        pre_target[:, 2] = self.table_z_height
+        self.go_to_pos(pre_target)
+
+        # format push target
+        xyz_target = torch.zeros(self.num_envs, 3, device=self.device)
+        xyz_target[:,:2] = xy_target
+        xyz_target[:, 2] = self.table_z_height
+        self.go_to_pos(xyz_target)
+
+        # format lift target
+        lift_target = torch.zeros(self.num_envs, 3, device=self.device)
+        lift_target[:,:2] = xy_target
+        lift_target[:, 2] = self.safe_height
+        self.go_to_pos(lift_target)
+
+        # resume step function as below: 
+        # to fix!
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+
+        # compute observations, rewards, resets, ...
+        self.post_physics_step()
+
+        self.control_steps += 1
+
+        # fill time out buffer: set to 1 if we reached the max episode length AND the reset buffer is 1. Timeout == 1 makes sense only if the reset buffer is 1.
+        self.timeout_buf = (self.progress_buf >= self.max_episode_length - 1) & (self.reset_buf != 0)
+
+        # randomize observations
+        if self.dr_randomizations.get('observations', None):
+            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
+
+        self.extras["time_outs"] = self.timeout_buf.to(self.rl_device)
+
+        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
+
+        # asymmetric actor-critic
+        if self.num_states > 0:
+            self.obs_dict["states"] = self.get_state()
+
+        return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
+
+
+
+    def step(self, actions: torch.Tensor):
+        """Step the physics of the environment.
+
+        Copied here to allow for primitive actions.
+
+        Args:
+            actions: actions to apply
+        Returns:
+            Observations, rewards, resets, info
+            Observations are dict of observations (currently only one member called 'obs')
+        """
+
+
+        # randomize actions
+        if self.dr_randomizations.get('actions', None):
+            actions = self.dr_randomizations['actions']['noise_lambda'](actions)
+
+        action_tensor = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+
+        # if the action is a primitive, run it separately 
+        if self.control_input == "primitive":
+            return self.primitive_step(actions)
+        
+        # apply actions
+        self.pre_physics_step(action_tensor)
+
+        # step physics and render each frame
+        for i in range(self.control_freq_inv):
+            if self.force_render:
+                self.render()
+            self.gym.simulate(self.sim)
+
+        # to fix!
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+
+        # compute observations, rewards, resets, ...
+        self.post_physics_step()
+
+        self.control_steps += 1
+
+        # fill time out buffer: set to 1 if we reached the max episode length AND the reset buffer is 1. Timeout == 1 makes sense only if the reset buffer is 1.
+        self.timeout_buf = (self.progress_buf >= self.max_episode_length - 1) & (self.reset_buf != 0)
+
+        # randomize observations
+        if self.dr_randomizations.get('observations', None):
+            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
+
+        self.extras["time_outs"] = self.timeout_buf.to(self.rl_device)
+
+        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
+
+        # asymmetric actor-critic
+        if self.num_states > 0:
+            self.obs_dict["states"] = self.get_state()
+
+        return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
+    
 
     def post_physics_step(self):
         self.progress_buf += 1

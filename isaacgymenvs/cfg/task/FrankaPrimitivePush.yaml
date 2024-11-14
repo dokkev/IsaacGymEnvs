@@ -7,7 +7,7 @@ physics_engine: ${..physics_engine}
 env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 1.5
-  episodeLength: 300
+  episodeLength: 6
   enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
   includePrivInfo: False #include priv info in the observation
@@ -31,16 +31,16 @@ env:
 
   posRewardScale: 1.0
   oriRewardScale: 0.0
-  contactRewardScale: 0.1
+  contactRewardScale: 0.0
   successRewardScale: 1.0
-  nHoldSteps: 50
+  nHoldSteps: 2
   
   propHistoryLen: 30
   privInfoDim: 9 
 
 
   controlType: osc  # options are {joint_tor, osc}
-  controlInput: pose6d # options are {pose2d, pose3d, pose6d}
+  controlInput: primitive # options are {primitive, pose2d, pose3d, pose6d}
   variableImpedance: False
   impedanceRange: [100, 400] # ignored if variableImpedance is False
 
