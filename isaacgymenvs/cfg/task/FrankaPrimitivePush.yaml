@@ -7,7 +7,7 @@ physics_engine: ${..physics_engine}
 env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 1.5
-  episodeLength: 6
+  episodeLength: 0
   enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
   includePrivInfo: False #include priv info in the observation
@@ -155,14 +155,14 @@ task:
             # schedule_steps: 30000
           com:
             # range: [[-0.04, 0.04], [-0.04, 0.04], [-0.01, 0.01]]
-            range: [-0.04, 0.04]
+            range: [-0.00, 0.00]
             distribution: "uniform"
             operation: "additive" 
 
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.02, 0.02]
+            range: [0.03, 0.03]
             operation: "scaling"
             distribution: "uniform"
 

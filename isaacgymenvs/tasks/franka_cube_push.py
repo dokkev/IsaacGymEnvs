@@ -280,7 +280,7 @@ class FrankaCubePush(PrivInfoVecTask):
         table_asset = self.gym.create_box(self.sim, *[1.2, 1.2, table_thickness], table_opts)
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
         for element in rigid_shape_props_asset:
-            element.friction = 0.01
+            element.friction = 0.1
         self.gym.set_asset_rigid_shape_properties(table_asset, rigid_shape_props_asset)
 
         # Create table stand asset
@@ -931,6 +931,11 @@ class FrankaCubePush(PrivInfoVecTask):
 
         actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
         actions = actions * self.prim_cmd_limit / self.action_scale
+
+        actions[:, 0] = 0.0
+        actions[:, 1] = -0.1
+        actions[:, 2] = 0.0
+        actions[:, 3] = 0.1
 
         if self.quat_desired is None: 
             self.quat_desired = torch.zeros_like(self.states['eef_quat'])
