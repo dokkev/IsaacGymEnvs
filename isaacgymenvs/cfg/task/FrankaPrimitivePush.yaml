@@ -162,7 +162,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.03, 0.03]
+            range: [0.03, 4]
             operation: "scaling"
             distribution: "uniform"
 
