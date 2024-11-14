@@ -147,14 +147,14 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 10.]
+            range: [1., 1.]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
             # schedule: "linear"  # "linear" will scale the current random sample by `min(current num steps, schedule_steps) / schedule_steps`
             # schedule_steps: 30000
           com:
-            # range: [[-0.02, 0.02], [-0.02, 0.02], [-0.01, 0.01]]
+            # range: [[-0.04, 0.04], [-0.04, 0.04], [-0.01, 0.01]]
             range: [-0.04, 0.04]
             distribution: "uniform"
             operation: "additive" 
@@ -162,7 +162,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.01, 5]
+            range: [0.02, 0.02]
             operation: "scaling"
             distribution: "uniform"
 
