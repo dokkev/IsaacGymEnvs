@@ -147,7 +147,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [1., 1.]
+            range: [1., 10.]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -162,7 +162,7 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.03, 4]
+            range: [0.03, 6]
             operation: "scaling"
             distribution: "uniform"
 
