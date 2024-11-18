@@ -933,10 +933,10 @@ class FrankaCubePush(PrivInfoVecTask):
         actions = actions * self.prim_cmd_limit / self.action_scale
 
         # testing purposes
-        actions[:, 0] = 0.0
-        actions[:, 1] = -0.1
-        actions[:, 2] = 0.0
-        actions[:, 3] = 0.2
+        # actions[:, 0] = 0.0
+        # actions[:, 1] = -0.1
+        # actions[:, 2] = 0.0
+        # actions[:, 3] = 0.2
 
         if self.quat_desired is None: 
             self.quat_desired = torch.zeros_like(self.states['eef_quat'])
