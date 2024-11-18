@@ -82,6 +82,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
             "r_vel_scale": self.cfg["env"]["velRewardScale"],
             "r_success_scale": self.cfg["env"]["successRewardScale"],
             "r_eef_approach_scale": self.cfg["env"]["eefApproachPenaltyScale"],
+            "r_cube_fall_scale": self.cfg["env"]["cubeFallPenaltyScale"],
         }
         
         # print messages for priv info for each env
@@ -646,7 +647,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
             for i, rb_prop in enumerate(cube_rb_props):
                 cube_mass = rb_prop.mass # float (kg)
                 cube_com = rb_prop.com # Vec3
-                # cube_inertia = rb_prop.inertia # Mat33 == [Vec3, Vec3, Vec3]
+                cube_inertia = rb_prop.inertia # Mat33 == [Vec3, Vec3, Vec3]
                 
             #isaacgym.gymapi.RigidShapeProperties
             for i, shape_prop in enumerate(cube_shape_props):
@@ -666,6 +667,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
             self.priv_info_buf[env_id, 2] = cube_com.x
             self.priv_info_buf[env_id, 3] = cube_com.y
             self.priv_info_buf[env_id, 4] = cube_com.z
+            self.priv_info_buf[env_id, 5] = table_friction
+            
+            
+            
             
             
             if self.enable_priv_info_print:
@@ -674,7 +679,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
                 print(f"  Friction = {cube_friction}")
                 print(f"  Table Friction = {table_friction}")
-                # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
+                print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
             
             
@@ -953,17 +958,25 @@ def compute_franka_reward(
 
     # Apply orientation reward only if the cube has moved
     orientation_reward = torch.where(has_moved, orientation_reward, torch.zeros_like(orientation_reward))
+    
+    # 6. Cube falling off the table penalty
+    # Check if cube has fallen off the table by comparing z-coordinates
+    cube_fallen = cube_pos[:, 2] < (goal_pos[:, 2] - 0.1)  # 10cm below goal height considered fallen
+    cube_fall_penalty = torch.where(cube_fallen, -reward_settings["r_cube_fall_scale"], torch.zeros_like(distance_reward))
+
 
     # Combine rewards
     rewards = (distance_reward +
                success_reward +
+               cube_fall_penalty +
                orientation_reward +
             #    ee_penalty +
             #    contact_reward +
                vel_reward)
 
     # Compute resets
-    reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
+    reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition | cube_fallen, 
+                          torch.ones_like(reset_buf), reset_buf)
     
     return rewards.detach(), reset_buf, success_condition
 

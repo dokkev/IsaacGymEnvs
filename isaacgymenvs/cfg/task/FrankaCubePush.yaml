@@ -9,8 +9,8 @@ env:
   envSpacing: 1.5
   episodeLength: 300
   enableDebugVis: False
-  enablePrivInfoPrint: False # it won't print if randomize is false
-  includePrivInfo: False #include priv info in the observation
+  enablePrivInfoPrint: True # it won't print if randomize is false
+  includePrivInfo: True #include priv info in the observation
 
   clipObservations: 5.0
   clipActions: 1.0
@@ -75,7 +75,7 @@ sim:
     contact_collection: 0 # 0: CC_NEVER (don't collect contact info), 1: CC_LAST_SUBSTEP (collect only contacts on last substep), 2: CC_ALL_SUBSTEPS (broken - do not use!)
 
 task:
-  randomize: False
+  randomize: True
   randomization_params:
     frequency: 720   # Define how many simulation steps between generating new randomizations
     observations:
@@ -146,7 +146,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 10.]
+            range: [0.1, 100.]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.

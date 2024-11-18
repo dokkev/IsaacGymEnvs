@@ -15,7 +15,7 @@
     </collision>
     <inertial>
       <mass value="0.1"/>
-      <origin xyz="0 0 0"/>
+      <origin xyz="0 0 -0.025"/>
       <!-- inertia of cyclinder m=0.1 kg r=0.55 m l= 0.04 m -->
       <inertia ixx="0.000089" ixy="0.0" ixz="0.0" iyy="0.000089" iyz="0.0" izz="0.000151"/>
     </inertial>
