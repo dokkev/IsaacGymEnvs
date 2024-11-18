@@ -47,7 +47,7 @@ def axisangle2quat(vec, eps=1e-6):
     return quat
 
 
-class FrankaCubePush(PrivInfoVecTask):
+class FrankaCubeTip(PrivInfoVecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
         self.cfg = cfg
@@ -89,14 +89,14 @@ class FrankaCubePush(PrivInfoVecTask):
         
         # include priviliged information in the observation space
         self.include_priv_info = self.cfg["env"]["includePrivInfo"]
-
+        
+        self.control_type = self.cfg["env"]["controlType"]
+        assert self.control_type in {"osc", "joint_tor"},\
+            "Invalid control type specified. Must be one of: {osc, joint_tor}"
 
         self.control_input = self.cfg["env"]["controlInput"]
         # assert self.control_type in {"pose3d", "pose6d"},\
             # "Invalid control input specified. Must be one of: {pose3d, pose6d}"
-        self.control_type = self.cfg["env"]["controlType"]
-        assert self.control_type in {"osc", "joint_tor"},\
-            "Invalid control type specified. Must be one of: {osc, joint_tor}"
 
 
         # dimensions
@@ -251,7 +251,7 @@ class FrankaCubePush(PrivInfoVecTask):
         table_thickness = 0.05
         table_opts = gymapi.AssetOptions()
         table_opts.fix_base_link = True
-        table_asset = self.gym.create_box(self.sim, *[1.2, 1.2, table_thickness], table_opts)
+        table_asset = self.gym.create_box(self.sim, *[1.5, 1.5, table_thickness], table_opts)
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
         for element in rigid_shape_props_asset:
             element.friction = 0.01
@@ -267,7 +267,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
         cube_color = gymapi.Vec3(0.6, 0.1, 0.0)
         # load cube asset
-        puck_asset_file = "urdf/puck.urdf"
+        puck_asset_file = "urdf/cube.urdf"
         self.cube_size = 0.05
         cube_asset = self.gym.load_asset(self.sim,asset_root, puck_asset_file, gymapi.AssetOptions())
         
@@ -689,18 +689,30 @@ class FrankaCubePush(PrivInfoVecTask):
         num_resets = len(env_ids)
         sampled_init_cube_state = torch.zeros(num_resets, 13, device=self.device)
         sampled_goal_cube_state = torch.zeros(num_resets, 13, device=self.device)
+        init_rot = torch.zeros((num_resets, 3), device=self.device)
+        goal_rot = torch.zeros((num_resets, 3), device=self.device)
+        cube_height = self.states["cube_size"]
 
         # Sample position and orientation for the cube
         centered_cube_xy_state = torch.tensor(self._table_surface_pos[:2], device=self.device, dtype=torch.float32) 
-        cube_height = self.states["cube_size"]
 
         # Set fixed z value based on table height and cube height
         sampled_init_cube_state[:, 2] = self._table_surface_pos[2] + cube_height[env_ids] / 2
         sampled_goal_cube_state[:, 2] = self._table_surface_pos[2] + cube_height[env_ids] / 2
 
-        #sample orientation
-        sampled_init_cube_state[:, 6] = 1.0
-        sampled_goal_cube_state[:, 6] = 1.0
+
+        # Set pitch (y-axis) to 90 degrees
+        init_rot[:, 1] = 0
+        goal_rot[:, 1] = np.pi/2
+        
+        # Add noise to yaw (z-axis)
+        init_rot[:, 2] = 2.0 * self.init_cube_ori_noise * (torch.rand(num_resets, device=self.device) - 0.5)
+        goal_rot[:, 2] = 2.0 * self.goal_cube_ori_noise * (torch.rand(num_resets, device=self.device) - 0.5)
+        
+        # Convert to quaternions
+        sampled_init_cube_state[:, 3:7] = axisangle2quat(init_rot)
+        sampled_goal_cube_state[:, 3:7] = axisangle2quat(goal_rot)
+
 
         # Sample x, y values with noise
         init_shift = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float32)
@@ -715,6 +727,18 @@ class FrankaCubePush(PrivInfoVecTask):
             + goal_shift 
             + 2.0 * self.goal_cube_pos_noise * (torch.rand(num_resets, 2, device=self.device) - 0.5)
         )
+        
+        # # sample orientation in z-axis
+        # if self.init_cube_ori_noise > 0:
+        #     aa_rot = torch.zeros(num_resets, 3, device=self.device)
+        #     aa_rot[:, 2] = 2.0 * self.init_cube_ori_noise * (torch.rand(num_resets, device=self.device) - 0.5)
+        #     sampled_init_cube_state[:, 3:7] = quat_mul(axisangle2quat(aa_rot), sampled_init_cube_state[:, 3:7])
+        
+        # if self.goal_cube_ori_noise > 0:
+        #     aa_rot = torch.zeros(num_resets, 3, device=self.device)
+        #     aa_rot[:, 2] = 2.0 * self.goal_cube_ori_noise * (torch.rand(num_resets, device=self.device) - 0.5)
+        #     sampled_goal_cube_state[:, 3:7] = quat_mul(axisangle2quat(aa_rot), sampled_goal_cube_state[:, 3:7])
+        
 
         # Set the new sampled values as the initial state for the cube
         self._init_cube_state[env_ids, :] = sampled_init_cube_state
@@ -931,6 +955,7 @@ def compute_franka_reward(
  
     # Combine rewards with scaling factors
     rewards = (reward_settings["r_pos_scale"] * pos_reward +
+               reward_settings["r_ori_scale"] * ori_reward +
                reward_settings["r_contact_scale"] * contact_reward + 
                reward_settings["r_success_scale"] * success_reward)
  
