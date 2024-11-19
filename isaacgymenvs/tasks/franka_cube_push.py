@@ -117,7 +117,7 @@ class FrankaCubePush(PrivInfoVecTask):
         elif self.control_input == "pose2d":
             self.cfg["env"]["numActions"] = 2 
         elif self.control_input == "primitive": 
-            self.cfg["env"]["numActions"] = 4
+            self.cfg["env"]["numActions"] = 2
         else: # pose6d
             self.cfg["env"]["numActions"] = 6 
 
@@ -172,7 +172,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
         # Franka defaults
 
-        if self.control_input == 'pose2d':
+        if self.control_input == 'pose2d' or self.control_input == 'primitive':
             self.franka_default_dof_pos = to_torch(
                 [-7.5521e-02,  7.5651e-01, -4.7575e-02, -2.3285e+00,  5.1002e-01,
                 3.0750e+00,  1.6528e-01,  1.0002e-03,  9.9984e-04], 
@@ -210,6 +210,7 @@ class FrankaCubePush(PrivInfoVecTask):
             self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
 
         self.prim_cmd_limit = to_torch([0.15, 0.15, 0.2, 0.2], device=self.device).unsqueeze(0)
+        self.xy_prim_cmd_limit = to_torch([0.25, 0.25], device=self.device).unsqueeze(0)
 
         # Action bias -- simulate unmodeled effects 
         self.add_action_noise = self.cfg["env"]["action_bias"] > 0
@@ -932,32 +933,45 @@ class FrankaCubePush(PrivInfoVecTask):
     def primitive_step(self, actions: torch.Tensor): 
 
         # testing purposes
+        # OG action space: (x,y) and delta (x,y)
         # actions[:, 0] = 0.0
         # actions[:, 1] = -0.1 / 0.15
         # actions[:, 2] = 0.0
         # actions[:, 3] = 1
 
+        # testing new pose2d primitive
+        actions[:, 0] = 0. 
+        actions[:, 1] = 0.5
 
         actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
-        actions = actions * self.prim_cmd_limit / self.action_scale
+        actions = actions * self.xy_prim_cmd_limit / self.action_scale
+        # actions = actions * self.prim_cmd_limit / self.action_scale
 
         if self.quat_desired is None: 
             self.quat_desired = torch.zeros_like(self.states['eef_quat'])
             self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
 
         # parse action
-        xy_start = actions[:, :2]
-        xy_target = xy_start + actions[:, 2:4]
+        # if self._steps_elapsed == 0:
+        xy_start = torch.tensor([-4.1652e-04, -9.9628e-02], device=self.device)
+        # else:
+        #     xy_start = self.states['eef_pos'][:,:2]
+
+        self._steps_elapsed+=1
+        xy_target = xy_start + actions[:, :2]
+
+        # breakpoint()
+        # xy_target = xy_start + actions[:, 2:4]
 
         # capture initial push state 
         og_eef_pos=self.states["eef_pos"]
         og_eef_quat=self.states["eef_quat"]
 
         # format move target 
-        move_target = torch.zeros(self.num_envs, 3, device=self.device)
-        move_target[:,:2] = xy_start
-        move_target[:, 2] = self.safe_height
-        self.go_to_pos(move_target)
+        # move_target = torch.zeros(self.num_envs, 3, device=self.device)
+        # move_target[:,:2] = xy_start
+        # move_target[:, 2] = self.safe_height
+        # self.go_to_pos(move_target)
 
         # format pre goal 
         pre_target = torch.zeros(self.num_envs, 3, device=self.device)
@@ -969,13 +983,13 @@ class FrankaCubePush(PrivInfoVecTask):
         xyz_target = torch.zeros(self.num_envs, 3, device=self.device)
         xyz_target[:,:2] = xy_target
         xyz_target[:, 2] = self.table_z_height
-        self.go_to_pos(xyz_target)
+        self.go_to_pos(xyz_target, epsilon=-np.inf, max_steps=100)
 
         # format lift target
-        lift_target = torch.zeros(self.num_envs, 3, device=self.device)
-        lift_target[:,:2] = xy_target
-        lift_target[:, 2] = self.safe_height
-        self.go_to_pos(lift_target)
+        # lift_target = torch.zeros(self.num_envs, 3, device=self.device)
+        # lift_target[:,:2] = xy_target
+        # lift_target[:, 2] = self.safe_height
+        # self.go_to_pos(lift_target)
 
         # resume step function as below: 
         # to fix!
@@ -1028,6 +1042,9 @@ class FrankaCubePush(PrivInfoVecTask):
         # if the action is a primitive, run it separately 
         if self.control_input == "primitive":
             return self.primitive_step(actions)
+        
+        print(self.states['eef_pos'])
+        # breakpoint()
         
         # apply actions
         self.pre_physics_step(action_tensor)
