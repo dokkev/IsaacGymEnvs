@@ -940,8 +940,8 @@ class FrankaCubePush(PrivInfoVecTask):
         # actions[:, 3] = 1
 
         # testing new pose2d primitive
-        actions[:, 0] = 0. 
-        actions[:, 1] = 0.5
+        # actions[:, 0] = 0. 
+        # actions[:, 1] = 0.5
 
         actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
         actions = actions * self.xy_prim_cmd_limit / self.action_scale
