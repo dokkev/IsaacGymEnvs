@@ -209,7 +209,7 @@ class FrankaCubePush(PrivInfoVecTask):
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
             self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
 
-        self.prim_cmd_limit = to_torch([0.15, 0.15, 0.1, 0.1], device=self.device).unsqueeze(0)
+        self.prim_cmd_limit = to_torch([0.15, 0.15, 0.2, 0.2], device=self.device).unsqueeze(0)
 
         # Action bias -- simulate unmodeled effects 
         self.add_action_noise = self.cfg["env"]["action_bias"] > 0
@@ -923,20 +923,23 @@ class FrankaCubePush(PrivInfoVecTask):
 
             if self.force_render:
                 self.render()
+                # self.vis_debug_lines()
             
             self.gym.simulate(self.sim)
+            self._update_states()
 
 
     def primitive_step(self, actions: torch.Tensor): 
 
-        actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
-        actions = actions * self.prim_cmd_limit / self.action_scale
-
         # testing purposes
         # actions[:, 0] = 0.0
-        # actions[:, 1] = -0.1
+        # actions[:, 1] = -0.1 / 0.15
         # actions[:, 2] = 0.0
-        # actions[:, 3] = 0.2
+        # actions[:, 3] = 1
+
+
+        actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+        actions = actions * self.prim_cmd_limit / self.action_scale
 
         if self.quat_desired is None: 
             self.quat_desired = torch.zeros_like(self.states['eef_quat'])
@@ -1061,6 +1064,31 @@ class FrankaCubePush(PrivInfoVecTask):
 
         return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
     
+    def vis_debug_lines(self):
+        self.gym.clear_lines(self.viewer)
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+
+        # Grab relevant states to visualize
+        eef_pos = self.states["finger_pos"]
+        eef_rot = self.states["finger_quat"]
+        cube_pos = self.states["cube_pos"]
+        cube_rot = self.states["cube_quat"]
+        goal_cube_pos = self.states["goal_cube_pos"]
+        goal_cube_rot = self.states["goal_cube_quat"]
+
+
+        # Plot visualizations
+        for i in range(self.num_envs):
+            for pos, rot in zip((eef_pos, cube_pos, goal_cube_pos), (eef_rot, cube_rot, goal_cube_rot)):
+                px = (pos[i] + quat_apply(rot[i], to_torch([1, 0, 0], device=self.device) * 0.2)).cpu().numpy()
+                py = (pos[i] + quat_apply(rot[i], to_torch([0, 1, 0], device=self.device) * 0.2)).cpu().numpy()
+                pz = (pos[i] + quat_apply(rot[i], to_torch([0, 0, 1], device=self.device) * 0.2)).cpu().numpy()
+
+                p0 = pos[i].cpu().numpy()
+                self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], px[0], px[1], px[2]], [0.85, 0.1, 0.1])
+                self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
+                self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
+
 
     def post_physics_step(self):
         self.progress_buf += 1
@@ -1074,31 +1102,8 @@ class FrankaCubePush(PrivInfoVecTask):
         self.compute_reward(self.actions)
         self.store_proprio_hist()
 
-        # debug viz
         if self.viewer and self.debug_viz:
-            self.gym.clear_lines(self.viewer)
-            self.gym.refresh_rigid_body_state_tensor(self.sim)
-
-            # Grab relevant states to visualize
-            eef_pos = self.states["finger_pos"]
-            eef_rot = self.states["finger_quat"]
-            cube_pos = self.states["cube_pos"]
-            cube_rot = self.states["cube_quat"]
-            goal_cube_pos = self.states["goal_cube_pos"]
-            goal_cube_rot = self.states["goal_cube_quat"]
-
-
-            # Plot visualizations
-            for i in range(self.num_envs):
-                for pos, rot in zip((eef_pos, cube_pos, goal_cube_pos), (eef_rot, cube_rot, goal_cube_rot)):
-                    px = (pos[i] + quat_apply(rot[i], to_torch([1, 0, 0], device=self.device) * 0.2)).cpu().numpy()
-                    py = (pos[i] + quat_apply(rot[i], to_torch([0, 1, 0], device=self.device) * 0.2)).cpu().numpy()
-                    pz = (pos[i] + quat_apply(rot[i], to_torch([0, 0, 1], device=self.device) * 0.2)).cpu().numpy()
-
-                    p0 = pos[i].cpu().numpy()
-                    self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], px[0], px[1], px[2]], [0.85, 0.1, 0.1])
-                    self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], py[0], py[1], py[2]], [0.1, 0.85, 0.1])
-                    self.gym.add_lines(self.viewer, self.envs[i], 1, [p0[0], p0[1], p0[2], pz[0], pz[1], pz[2]], [0.1, 0.1, 0.85])
+            self.vis_debug_lines()
     
     def batch_reward_fn(self, obs):
 
