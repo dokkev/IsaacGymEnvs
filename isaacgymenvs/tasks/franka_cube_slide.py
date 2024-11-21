@@ -115,6 +115,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
             self.cfg["env"]["numActions"] = 3 
         elif self.control_input == "pose2d":
             self.cfg["env"]["numActions"] = 2 
+        elif self.control_input == "primitive": 
+            self.cfg["env"]["numActions"] = 2
         else: # pose6d
             self.cfg["env"]["numActions"] = 6 
 
@@ -137,6 +139,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self._cube_id = None                   # Actor ID corresponding to cube for a given env
         
         self._eef_goal_state = None            # Goal state of end effector
+        self.quat_desired = None                # Quaternion target for fixed ori control
 
         
         # Tensor placeholders
@@ -186,13 +189,19 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self.kp_null = to_torch([10.] * 7, device=self.device)
         self.kd_null = 2 * torch.sqrt(self.kp_null)
         #self.cmd_limit = None                   # filled in later
+        
 
         # Set control limits
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
         self.control_type == "osc" else self._franka_effort_limits[:7].unsqueeze(0)
+        self.xy_prim_cmd_limit = to_torch([0.25, 0.25], device=self.device).unsqueeze(0)
 
         # Reset all environments
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
+
+        # Hardcode table height and safe height for pose2d, primitive action spaces
+        self.table_z_height = 1.0450 + 0.1
+        self.safe_height = 1.3171
 
         # Refresh tensors
         self._refresh()
@@ -822,6 +831,193 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
 
+    def go_to_pos(self, xyz_target, epsilon=1e-3, max_steps=50):
+        
+        # step primitive to target xy 
+        for i in range(max_steps):
+
+            self._refresh() 
+            eef_pos=self.states["eef_pos"]
+            eef_quat=self.states["eef_quat"]
+
+            if torch.all(torch.norm(xyz_target - eef_pos, dim=-1) < epsilon): 
+                break
+
+            q_error = quat_mul(self.quat_desired, quat_conjugate(eef_quat))
+            angle, axis = quat_to_angle_axis(q_error)
+            ori_error = angle.unsqueeze(1) * axis
+
+            dpose = torch.zeros((self.num_envs, 6), device=self.device)
+            dpose[:, :3] = xyz_target - eef_pos 
+            dpose[:, 3:] = ori_error 
+
+            # Compute OSC torques with variable kp and kd
+            u_arm = self._compute_osc_torques(dpose=dpose)
+            self._arm_control[:, :] = u_arm  # Apply control with variable kp and kd
+
+            # Deploy actions
+            self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
+            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
+
+            if self.force_render:
+                self.render()
+                # self.vis_debug_lines()
+            
+            self.gym.simulate(self.sim)
+            self._update_states()
+
+
+    def primitive_step(self, actions: torch.Tensor): 
+
+        # testing purposes
+        # OG action space: (x,y) and delta (x,y)
+        # actions[:, 0] = 0.0
+        # actions[:, 1] = -0.1 / 0.15
+        # actions[:, 2] = 0.0
+        # actions[:, 3] = 1
+
+        # testing new pose2d primitive
+        # actions[:, 0] = 0. 
+        # actions[:, 1] = 0.5
+        # actions = torch.zeros_like(actions, device=self.device)
+
+        actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+        actions = actions * self.xy_prim_cmd_limit / self.action_scale
+        # actions = actions * self.prim_cmd_limit / self.action_scale
+
+        if self.quat_desired is None: 
+            self.quat_desired = torch.zeros_like(self.states['eef_quat'])
+            self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
+
+        # parse action
+        # if self._steps_elapsed == 0:
+        xy_start = torch.tensor([-4.1652e-04, -9.9628e-02], device=self.device)
+        # else:
+        #     xy_start = self.states['eef_pos'][:,:2]
+
+        self._steps_elapsed+=1
+        xy_target = xy_start + actions[:, :2]
+
+        # breakpoint()
+        # xy_target = xy_start + actions[:, 2:4]
+
+        # capture initial push state 
+        og_eef_pos=self.states["eef_pos"]
+        og_eef_quat=self.states["eef_quat"]
+
+        # format move target 
+        # move_target = torch.zeros(self.num_envs, 3, device=self.device)
+        # move_target[:,:2] = xy_start
+        # move_target[:, 2] = self.safe_height
+        # self.go_to_pos(move_target)
+
+        # format pre goal 
+        pre_target = torch.zeros(self.num_envs, 3, device=self.device)
+        pre_target[:,:2] = xy_start
+        pre_target[:, 2] = self.table_z_height
+        self.go_to_pos(pre_target)
+
+        # format push target
+        xyz_target = torch.zeros(self.num_envs, 3, device=self.device)
+        xyz_target[:,:2] = xy_target
+        xyz_target[:, 2] = self.table_z_height
+        self.go_to_pos(xyz_target, epsilon=-np.inf, max_steps=100)
+
+        # format lift target
+        # lift_target = torch.zeros(self.num_envs, 3, device=self.device)
+        # lift_target[:,:2] = xy_target
+        # lift_target[:, 2] = self.safe_height
+        # self.go_to_pos(lift_target)
+
+        # resume step function as below: 
+        # to fix!
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+
+        # compute observations, rewards, resets, ...
+        self.post_physics_step()
+
+        self.control_steps += 1
+
+        # fill time out buffer: set to 1 if we reached the max episode length AND the reset buffer is 1. Timeout == 1 makes sense only if the reset buffer is 1.
+        self.timeout_buf = (self.progress_buf >= self.max_episode_length - 1) & (self.reset_buf != 0)
+
+        # randomize observations
+        if self.dr_randomizations.get('observations', None):
+            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
+
+        self.extras["time_outs"] = self.timeout_buf.to(self.rl_device)
+
+        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
+
+        # asymmetric actor-critic
+        if self.num_states > 0:
+            self.obs_dict["states"] = self.get_state()
+
+        return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
+
+
+    def step(self, actions: torch.Tensor):
+        """Step the physics of the environment.
+
+        Copied here to allow for primitive actions.
+
+        Args:
+            actions: actions to apply
+        Returns:
+            Observations, rewards, resets, info
+            Observations are dict of observations (currently only one member called 'obs')
+        """
+
+
+        # randomize actions
+        if self.dr_randomizations.get('actions', None):
+            actions = self.dr_randomizations['actions']['noise_lambda'](actions)
+
+        action_tensor = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+
+        # if the action is a primitive, run it separately 
+        if self.control_input == "primitive":
+            return self.primitive_step(actions)
+        
+        print(self.states['eef_pos'])
+        # breakpoint()
+        
+        # apply actions
+        self.pre_physics_step(action_tensor)
+
+        # step physics and render each frame
+        for i in range(self.control_freq_inv):
+            if self.force_render:
+                self.render()
+            self.gym.simulate(self.sim)
+
+        # to fix!
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+
+        # compute observations, rewards, resets, ...
+        self.post_physics_step()
+
+        self.control_steps += 1
+
+        # fill time out buffer: set to 1 if we reached the max episode length AND the reset buffer is 1. Timeout == 1 makes sense only if the reset buffer is 1.
+        self.timeout_buf = (self.progress_buf >= self.max_episode_length - 1) & (self.reset_buf != 0)
+
+        # randomize observations
+        if self.dr_randomizations.get('observations', None):
+            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
+
+        self.extras["time_outs"] = self.timeout_buf.to(self.rl_device)
+
+        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
+
+        # asymmetric actor-critic
+        if self.num_states > 0:
+            self.obs_dict["states"] = self.get_state()
+
+        return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
+    
 
 
     def post_physics_step(self):
