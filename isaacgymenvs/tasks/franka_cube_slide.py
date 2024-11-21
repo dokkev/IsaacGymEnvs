@@ -168,9 +168,15 @@ class FrankaCubeSlide(PrivInfoVecTask):
         super().__init__(config=self.cfg, rl_device=rl_device, sim_device=sim_device, graphics_device_id=graphics_device_id, headless=headless, virtual_screen_capture=virtual_screen_capture, force_render=force_render)
 
         # Franka defaults
-        self.franka_default_dof_pos = to_torch(
-            [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.001, 0.001], device=self.device
-        )
+        if self.control_input == 'pose2d' or self.control_input == 'primitive':
+            self.franka_default_dof_pos = to_torch(
+                [-1.6278e-02,  7.4004e-01,  1.2501e-03, -2.3875e+00, -7.6284e-02,
+                3.1262e+00,  8.4474e-01,  9.9999e-04,  1.0000e-03], device=self.device
+            )
+        else:
+            self.franka_default_dof_pos = to_torch(
+                [0, 0.1963, 0, -2.6180, 0, 2.9416, 0.7854, 0.001, 0.001], device=self.device
+            )
 
         # OSC Gains 
         # set default gains
@@ -684,9 +690,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 print(f"  Friction = {cube_friction}")
                 print(f"  Table Friction = {table_friction}")
                 # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
-                
-            
-            
              
         
     def _reset_init_cube_state(self, env_ids, check_valid=True):
@@ -709,14 +712,15 @@ class FrankaCubeSlide(PrivInfoVecTask):
         cube_height = self.states["cube_size"]
         
         # add offet to the centered_cube_xy_state
-        init_x_offset = -0.1 - 1.0
+        init_x_offset = -0.1 - 0.8
         init_y_offset = 0.0
         init_cube_xy_state = centered_cube_xy_state + torch.tensor([init_x_offset, init_y_offset], device=self.device, dtype=torch.float32)
         
         # add offset to the centered_cube_xy_state
-        goal_x_offset = 1.5
+        goal_x_offset = 1.0
         goal_y_offset = 0.0
-        goal_cube_xy_state = centered_cube_xy_state + torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
+        # goal_cube_xy_state = centered_cube_xy_state + torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
+        goal_cube_xy_state = torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
 
         # Set fixed z value based on table height and cube height
         sampled_init_cube_state[:, 2] = self._table_surface_pos[2] + cube_height[env_ids] / 2
@@ -877,11 +881,11 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # actions[:, 3] = 1
 
         # testing new pose2d primitive
-        # actions[:, 0] = 0. 
-        # actions[:, 1] = 0.5
+        actions[:, 0] = 0.49
+        actions[:, 1] = 0.0
         # actions = torch.zeros_like(actions, device=self.device)
 
-        actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+        # actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
         actions = actions * self.xy_prim_cmd_limit / self.action_scale
         # actions = actions * self.prim_cmd_limit / self.action_scale
 
@@ -891,7 +895,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         # parse action
         # if self._steps_elapsed == 0:
-        xy_start = torch.tensor([-4.1652e-04, -9.9628e-02], device=self.device)
+        xy_start = torch.tensor([0, 0.0], device=self.device)
         # else:
         #     xy_start = self.states['eef_pos'][:,:2]
 
@@ -921,7 +925,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
         xyz_target = torch.zeros(self.num_envs, 3, device=self.device)
         xyz_target[:,:2] = xy_target
         xyz_target[:, 2] = self.table_z_height
-        self.go_to_pos(xyz_target, epsilon=-np.inf, max_steps=100)
+        self.go_to_pos(xyz_target, epsilon=-np.inf, max_steps=200)
+
+        # print(self._cube_state[:, :3])
 
         # format lift target
         # lift_target = torch.zeros(self.num_envs, 3, device=self.device)
