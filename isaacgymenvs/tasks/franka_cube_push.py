@@ -1115,6 +1115,10 @@ class FrankaCubePush(PrivInfoVecTask):
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
 
+            # hack to get resets to work for primitive 1 step envs.
+            if self.control_input == "primitive" and self.max_episode_length == 1:
+                self.gym.simulate(self.sim)
+
         self.compute_observations()
         self.compute_reward(self.actions)
         self.store_proprio_hist()
