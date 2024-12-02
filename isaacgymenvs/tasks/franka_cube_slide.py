@@ -182,20 +182,16 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # set default gains
         # self.kp = to_torch([200.] * 6, device=self.device)
         # self.kd = 2 * torch.sqrt(self.kp)
-
         kp_min = self.impedance_range[0]
         kp_max = self.impedance_range[1]
         
-        self.kp_min = to_torch([kp_min] * 6, device=self.device)
-        self.kp_max = to_torch([kp_max] * 6, device=self.device)
-
-        # Initialize kp and kd with default values
-        self.kp = to_torch([200.] * 6, device=self.device)
+        self.kp_min = to_torch([kp_min] * 6, device=self.device).unsqueeze(0)
+        self.kp_max = to_torch([kp_max] * 6, device=self.device).unsqueeze(0)        
+        self.kp = torch.zeros(self.num_envs, 6, device=self.device)
+        self.kp[:, :] = 200.
         self.kd = 2 * torch.sqrt(self.kp)
         self.kp_null = to_torch([10.] * 7, device=self.device)
         self.kd_null = 2 * torch.sqrt(self.kp_null)
-        #self.cmd_limit = None                   # filled in later
-        
 
         # Set control limits
         self.cmd_limit = to_torch([0.1, 0.1, 0.1, 0.5, 0.5, 0.5], device=self.device).unsqueeze(0) if \
@@ -749,8 +745,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
         m_eef_inv = self._j_eef @ mm_inv @ torch.transpose(self._j_eef, 1, 2)
         m_eef = torch.inverse(m_eef_inv)
 
-        # abs pos and ori
-        
         # Transform our cartesian action `dpose` into joint torques `u`
         u = torch.transpose(self._j_eef, 1, 2) @ m_eef @ (
                 self.kp * dpose - self.kd * self.states["eef_vel"]).unsqueeze(-1)
@@ -778,6 +772,12 @@ class FrankaCubeSlide(PrivInfoVecTask):
         if self.quat_desired is None: 
             self.quat_desired = torch.zeros_like(self.states['eef_quat'])
             self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
+        
+        # Extract kp and kd
+        if self.variable_imp:
+            self.kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, -6:])  
+            self.kd = 2 * torch.sqrt(self.kp)
+
 
         if self.control_type == "osc":
             if self.control_input == "pose2d":
@@ -789,12 +789,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 # if self.add_action_noise: 
                 #     noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
                 #     u_arm += noise
-
-                # Extract kp and kd
-                if self.variable_imp:
-                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 2:8])  
-                    self.kp[:2] = kp
-                    self.kd = 2 * torch.sqrt(self.kp)
 
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :2] / self.action_scale
@@ -822,13 +816,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
-                # Extract kp and kd
-                if self.variable_imp:
-                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 3:9])  # Actions 3 to 8 (6)
-                    self.kp = kp
-                    self.kd = 2 * torch.sqrt(self.kp)
-                    
-
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :3] / self.action_scale
 
@@ -850,8 +837,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 dpose[:, :3] = u_arm  # Set the position control to x, y, z
                 dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
 
-
-
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
 
@@ -864,7 +849,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
                     kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 6:12])  # Actions 6 to 11 (6)
                     self.kp = kp
                     self.kd = 2 * torch.sqrt(self.kp)
-        
 
                 # Scale the control inputs as needed
                 u_arm = u_arm * self.cmd_limit / self.action_scale
