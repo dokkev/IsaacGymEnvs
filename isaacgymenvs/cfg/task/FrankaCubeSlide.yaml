@@ -8,9 +8,9 @@ env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 2.5
   episodeLength: 300
-  enableDebugVis: True
+  enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
-  includePrivInfo: True #include priv info in the observation
+  includePrivInfo: False #include priv info in the observation
 
   clipObservations: 5.0
   clipActions: 1.0
@@ -41,9 +41,9 @@ env:
   privInfoDim: 9 
 
   controlType: osc  # options are {joint_tor, osc}
-  controlInput: pose6d # options are {pose3d, pose6d}
+  controlInput: pose2d # options are {pose3d, pose6d}
   variableImpedance: True
-  impedanceRange: [10, 1000] # ignored if variableImpedance is False
+  impedanceRange: [100, 400] # ignored if variableImpedance is False
 
   asset:
     assetRoot: "../../assets"
@@ -145,7 +145,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 0.1]
+            range: [1, 1]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -159,8 +159,8 @@ task:
 
         rigid_shape_properties:
           friction:
-            num_buckets: 250
-            range: [0.05, 0.05]
+            num_buckets: 2
+            range: [0.03, 0.2]
             operation: "scaling"
             distribution: "uniform"
 
