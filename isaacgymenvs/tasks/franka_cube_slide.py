@@ -774,8 +774,51 @@ class FrankaCubeSlide(PrivInfoVecTask):
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
 
+        # grab initial orientation for fixed ori control 
+        if self.quat_desired is None: 
+            self.quat_desired = torch.zeros_like(self.states['eef_quat'])
+            self.quat_desired[:] = torch.tensor([ 1., 0., 0., 0.], device=self.device)
+
         if self.control_type == "osc":
-            if self.control_input == "pose3d":
+            if self.control_input == "pose2d":
+                u_arm = self.actions[:, :2]  # First 2 actions for 2D position control
+
+                # z_error, constant height
+                z_error = self.table_z_height - self.states["eef_pos"][:, 2]
+
+                # if self.add_action_noise: 
+                #     noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                #     u_arm += noise
+
+                # Extract kp and kd
+                if self.variable_imp:
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 2:8])  
+                    self.kp[:2] = kp
+                    self.kd = 2 * torch.sqrt(self.kp)
+
+                # Scale the position control
+                u_arm = u_arm * self.cmd_limit[:, :2] / self.action_scale
+
+                # Fixed orientation 
+                if self._steps_elapsed == 0:
+                    ori_error = torch.zeros((self.num_envs, 3), device=self.device)
+                else: 
+                    eef_rot = self.states["eef_quat"]
+                    q_error = quat_mul(self.quat_desired, quat_conjugate(eef_rot))
+                    angle, axis = quat_to_angle_axis(q_error)
+                    ori_error = angle.unsqueeze(1) * axis
+                self._steps_elapsed += 1 
+
+                # Prepare dpose (6D: position + orientation)
+                dpose = torch.zeros((self.num_envs, 6), device=self.device)
+                dpose[:, :2] = u_arm  # Set the position control to x, y, z
+                dpose[:, 2] = z_error
+                dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
+
+                # Compute OSC torques with variable kp and kd
+                u_arm = self._compute_osc_torques(dpose=dpose)
+                
+            elif self.control_input == "pose3d":
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
@@ -881,8 +924,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # actions[:, 3] = 1
 
         # testing new pose2d primitive
-        actions[:, 0] = 0.49
-        actions[:, 1] = 0.0
+        # actions[:, 0] = 0.49
+        # actions[:, 0] = 0.99
+        # actions[:, 1] = 0.0
         # actions = torch.zeros_like(actions, device=self.device)
 
         # actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
@@ -985,9 +1029,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # if the action is a primitive, run it separately 
         if self.control_input == "primitive":
             return self.primitive_step(actions)
-        
-        print(self.states['eef_pos'])
-        # breakpoint()
         
         # apply actions
         self.pre_physics_step(action_tensor)

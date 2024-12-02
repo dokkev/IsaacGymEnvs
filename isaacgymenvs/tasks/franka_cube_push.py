@@ -805,7 +805,7 @@ class FrankaCubePush(PrivInfoVecTask):
 
                 # Extract kp and kd
                 if self.variable_imp:
-                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 2:4])  # Actions 2 to 4 (2)
+                    kp = self.kp_min + (self.kp_max - self.kp_min) * torch.sigmoid(self.actions[:, 2:])  # Actions 2 to 4 (2)
                     self.kp[:2] = kp
                     self.kd = 2 * torch.sqrt(self.kp)
 
@@ -831,7 +831,7 @@ class FrankaCubePush(PrivInfoVecTask):
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
 
-            if self.control_input == "pose3d":
+            elif self.control_input == "pose3d":
                 # Extract control commands
                 u_arm = self.actions[:, :3]  # First 3 actions for position control
 
