@@ -33,7 +33,7 @@ env:
   oriRewardScale: 0.5
   velRewardScale: 0.5
   contactRewardScale: 0.3
-  successRewardScale: 100.0
+  successRewardScale: 300.0
   eefApproachPenaltyScale: 0.1
   
   
@@ -160,7 +160,9 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
-            range: [0.03, 0.2]
+            range: [0.03, 0.09]
+            # range: [0.03, 0.03]
+            # range: [0.06, 0.06]
             operation: "scaling"
             distribution: "uniform"
 

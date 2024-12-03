@@ -768,6 +768,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
+        # self.actions = torch.zeros_like(actions, device=self.device)
+        # self.actions[:, 0] = 1.0
 
         # grab initial orientation for fixed ori control 
         if self.quat_desired is None: 
