@@ -1184,11 +1184,12 @@ def compute_franka_reward(
 
     # Combine rewards
     rewards = (distance_reward +
-               success_reward +
-               orientation_reward +
+               success_reward 
+            #    orientation_reward +
             #    ee_penalty +
             #    contact_reward +
-               vel_reward)
+            #    vel_reward
+    )
 
     # Compute resets
     reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
