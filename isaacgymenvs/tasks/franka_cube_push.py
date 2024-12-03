@@ -105,9 +105,9 @@ class FrankaCubePush(PrivInfoVecTask):
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
         if self.include_priv_info:
-            self.cfg["env"]["numObservations"] = 29
+            self.cfg["env"]["numObservations"] = 4 # 29
         else:
-            self.cfg["env"]["numObservations"] = 20
+            self.cfg["env"]["numObservations"] = 3 # 20
             
 
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
@@ -540,7 +540,8 @@ class FrankaCubePush(PrivInfoVecTask):
         # TODO: compute current cube to goal cube quaternion
         
         # Observable Information
-        obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel, cube_pos_diff]
+        # obs = [cube_pos, cube_quat, eef_pos, eef_quat, cube_vel, cube_pos_diff]
+        obs = [cube_pos]
         
         # Include priv info in the observation space
         if self.include_priv_info:
@@ -690,11 +691,12 @@ class FrankaCubePush(PrivInfoVecTask):
                 # cube_restitution = shape_prop.restitution # [0,1]
                 
             # store in priv_info_buf
-            self.priv_info_buf[env_id, 0] = cube_mass
-            self.priv_info_buf[env_id, 1] = cube_friction
-            self.priv_info_buf[env_id, 2] = cube_com.x
-            self.priv_info_buf[env_id, 3] = cube_com.y
-            self.priv_info_buf[env_id, 4] = cube_com.z
+            # self.priv_info_buf[env_id, 0] = cube_mass
+            # self.priv_info_buf[env_id, 1] = cube_friction
+            # self.priv_info_buf[env_id, 2] = cube_com.x
+            # self.priv_info_buf[env_id, 3] = cube_com.y
+            # self.priv_info_buf[env_id, 4] = cube_com.z
+            self.priv_info_buf[env_id, 0] = cube_friction
             
             
             if self.enable_priv_info_print:
@@ -1111,7 +1113,13 @@ class FrankaCubePush(PrivInfoVecTask):
         self.progress_buf += 1
         self.randomize_buf += 1
 
-        env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
+        # hack to force primitive reset on first step
+        if self.control_input == "primitive" and self.max_episode_length == 1:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        else: 
+            env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
+
+        # reset the envs that need to be reset
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
 

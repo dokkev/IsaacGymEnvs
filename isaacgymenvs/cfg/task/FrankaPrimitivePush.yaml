@@ -36,7 +36,7 @@ env:
   nHoldSteps: 1
   
   propHistoryLen: 30
-  privInfoDim: 9 
+  privInfoDim: 1 # 9 
 
 
   controlType: osc  # options are {joint_tor, osc}

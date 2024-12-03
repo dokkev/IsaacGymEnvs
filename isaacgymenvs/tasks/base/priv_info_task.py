@@ -57,15 +57,15 @@ class PrivInfoVecTask(VecTask):
 
     def reset(self):
         super().reset()
-        if self.config['task']['randomize']:
-            self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+        # if self.config['task']['randomize']:
+            # self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
             # self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
         return self.obs_dict
 
     def step(self, actions):
        super().step(actions)
-       if self.config['task']['randomize']:
-            self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+    #    if self.config['task']['randomize']:
+            # self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
             # self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device) 
        return self.obs_dict, self.rew_buf, self.reset_buf, self.extras
        
