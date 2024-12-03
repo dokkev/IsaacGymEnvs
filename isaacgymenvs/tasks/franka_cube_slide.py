@@ -270,6 +270,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self.cube_size = 0.05
         cube_asset = self.gym.load_asset(self.sim,asset_root, puck_asset_file, gymapi.AssetOptions())
         
+        for element in rigid_shape_props_asset:
+                element.friction = 0.05
+        self.gym.set_asset_rigid_shape_properties(cube_asset, rigid_shape_props_asset)
+        
         
     
         self.num_franka_bodies = self.gym.get_asset_rigid_body_count(franka_asset)
@@ -681,7 +685,50 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 print(f"  Table Friction = {table_friction}")
                 print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
+    
+    def print_priv_info(self, env_ids):
+    
+        for env_id in range(env_ids):
+            env_ptr = self.envs[env_id]
+            cube_handle = self.gym.find_actor_handle(env_ptr, "cube")
+            cube_rb_props = self.gym.get_actor_rigid_body_properties(env_ptr, cube_handle)
+            cube_shape_props = self.gym.get_actor_rigid_shape_properties(env_ptr, cube_handle)
+
+            table_shape_props = self.gym.get_actor_rigid_shape_properties(
+                env_ptr,
+                self.gym.find_actor_handle(env_ptr, "table")
+            )
+            #isaacgym.gymapi.RigidBodyProperties
+            for i, rb_prop in enumerate(cube_rb_props):
+                cube_mass = rb_prop.mass # float (kg)
+                cube_com = rb_prop.com # Vec3
+                # cube_inertia = rb_prop.inertia # Mat33 == [Vec3, Vec3, Vec3]
+                
+            #isaacgym.gymapi.RigidShapeProperties
+            for i, shape_prop in enumerate(cube_shape_props):
+                cube_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
             
+            for i, shape_prop in enumerate(table_shape_props):
+                table_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
+                
+                            # store in priv_info_buf
+    
+    
+                # print(f"Env {env_id}, Cube Privileged Info:")
+            # print(f"  Mass = {cube_mass}")
+
+                # print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
+            print(f"  Friction = {cube_friction}")
+            print(f"  Table Friction = {table_friction}")
+                # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")    
             
              
         
@@ -844,6 +891,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         self.compute_observations()
         self.compute_reward(self.actions)
         self.store_proprio_hist()
+        # self.print_priv_info(self.num_envs)
 
         # debug viz
         if self.viewer and self.debug_viz:

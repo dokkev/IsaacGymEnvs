@@ -8,16 +8,16 @@ env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 2.5
   episodeLength: 300
-  enableDebugVis: True
+  enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
   includePrivInfo: False #include priv info in the observation
 
   clipObservations: 5.0
   clipActions: 1.0
 
-  cubeInitPosNoise: 0.2
+  cubeInitPosNoise: 0.0
   cubeInitOriNoise: 0
-  cubeGoalPosNoise: 0.5
+  cubeGoalPosNoise: 0.0
   cubeGoalOriNoise: 0.
 
   frankaPositionNoise: 0.0
@@ -29,12 +29,12 @@ env:
 
   actionScale: 1.0
 
-  posRewardScale: 2.0
+  posRewardScale: 3.0
   oriRewardScale: 0.5
   velRewardScale: 0.5
   contactRewardScale: 0.3
-  successRewardScale: 200.0
-  cubeFallPenaltyScale: 200.0
+  successRewardScale: 300.0
+  cubeFallPenaltyScale: 100.0
   eefApproachPenaltyScale: 0.1
   
   
@@ -44,7 +44,7 @@ env:
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose6d # options are {pose3d, pose6d}
   variableImpedance: True
-  impedanceRange: [10, 1000] # ignored if variableImpedance is False
+  impedanceRange: [1, 500] # ignored if variableImpedance is False
 
   asset:
     assetRoot: "../../assets"
@@ -75,7 +75,7 @@ sim:
     contact_collection: 0 # 0: CC_NEVER (don't collect contact info), 1: CC_LAST_SUBSTEP (collect only contacts on last substep), 2: CC_ALL_SUBSTEPS (broken - do not use!)
 
 task:
-  randomize: True
+  randomize: False
   randomization_params:
     frequency: 1   # Define how many simulation steps between generating new randomizations
     observations:
@@ -146,7 +146,7 @@ task:
         color: True
         rigid_body_properties:
           mass:
-            range: [0.1, 10.0]
+            range: [1.0, 1.0]
             operation: "scaling"
             distribution: "uniform"
             setup_only: True # Property will only be randomized once before simulation is started. See Domain Randomization Documentation for more info.
@@ -154,14 +154,14 @@ task:
             # schedule_steps: 30000
           com:
             # range: [[-0.02, 0.02], [-0.02, 0.02], [-0.01, 0.01]]
-            range: [0.03, -0.03]
+            range: [0.00, -0.00]
             distribution: "uniform"
             operation: "additive" 
 
         rigid_shape_properties:
           friction:
             num_buckets: 250
-            range: [0.01, 0.1]
+            range: [1.1, 1.1]
             operation: "scaling"
             distribution: "uniform"
 

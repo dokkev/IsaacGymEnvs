@@ -253,8 +253,8 @@ class FrankaCubeTip(PrivInfoVecTask):
         table_opts.fix_base_link = True
         table_asset = self.gym.create_box(self.sim, *[1.5, 1.5, table_thickness], table_opts)
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(table_asset)
-        for element in rigid_shape_props_asset:
-            element.friction = 0.01
+        # for element in rigid_shape_props_asset:
+        #     element.friction = 0.01
         self.gym.set_asset_rigid_shape_properties(table_asset, rigid_shape_props_asset)
 
         # Create table stand asset
@@ -390,6 +390,8 @@ class FrankaCubeTip(PrivInfoVecTask):
         self._init_cube_state = torch.zeros(self.num_envs, 13, device=self.device)
         self._goal_cube_state = torch.zeros(self.num_envs, 13, device=self.device)
         self._eef_goal_state = torch.zeros(self.num_envs, 13, device=self.device)
+        
+        
 
         # Setup data
         self.init_data()
@@ -452,6 +454,7 @@ class FrankaCubeTip(PrivInfoVecTask):
                                            device=self.device).view(self.num_envs, -1)
 
     def _update_states(self):
+        
         self.states.update({
             # Franka 
             "q": self._q[:, :],
@@ -480,6 +483,7 @@ class FrankaCubeTip(PrivInfoVecTask):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
         self.gym.refresh_jacobian_tensors(self.sim)
         self.gym.refresh_mass_matrix_tensors(self.sim)
+
 
         # Refresh states
         self._update_states()
@@ -560,6 +564,7 @@ class FrankaCubeTip(PrivInfoVecTask):
 
             #  store prvi info in priv_info_buf [[env_id], [mass, friction, com_x, com_y, com_z]]
             self._store_priv_info(env_ids)
+            # self.print_priv_info(env_ids)
             
         env_ids_int32 = env_ids.to(dtype=torch.int32)
 
@@ -663,16 +668,59 @@ class FrankaCubeTip(PrivInfoVecTask):
             self.priv_info_buf[env_id, 4] = cube_com.z
             
             
-            if self.enable_priv_info_print:
-                print(f"Env {env_id}, Cube Privileged Info:")
-                print(f"  Mass = {cube_mass}")
-                print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
-                print(f"  Friction = {cube_friction}")
-                print(f"  Table Friction = {table_friction}")
+            # if self.enable_priv_info_print:
+                # print(f"Env {env_id}, Cube Privileged Info:")
+                # print(f"  Mass = {cube_mass}")
+                # print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
+                # print(f"  Friction = {cube_friction}")
+                # print(f"  Table Friction = {table_friction}")
                 # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
                 
             
+    def print_priv_info(self, env_ids):
+    
+        for env_id in env_ids:
+            env_ptr = self.envs[env_id]
+            cube_handle = self.gym.find_actor_handle(env_ptr, "cube")
+            cube_rb_props = self.gym.get_actor_rigid_body_properties(env_ptr, cube_handle)
+            cube_shape_props = self.gym.get_actor_rigid_shape_properties(env_ptr, cube_handle)
+
+            table_shape_props = self.gym.get_actor_rigid_shape_properties(
+                env_ptr,
+                self.gym.find_actor_handle(env_ptr, "table")
+            )
+            #isaacgym.gymapi.RigidBodyProperties
+            for i, rb_prop in enumerate(cube_rb_props):
+                cube_mass = rb_prop.mass # float (kg)
+                cube_com = rb_prop.com # Vec3
+                # cube_inertia = rb_prop.inertia # Mat33 == [Vec3, Vec3, Vec3]
+                
+            #isaacgym.gymapi.RigidShapeProperties
+            for i, shape_prop in enumerate(cube_shape_props):
+                cube_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
             
+            for i, shape_prop in enumerate(table_shape_props):
+                table_friction = shape_prop.friction
+                # cube_rolling_friction = shape_prop.rolling_friction
+                # cube_torsion_friction = shape_prop.torsion_friction
+                # cube_compliance = shape_prop.compliance
+                # cube_restitution = shape_prop.restitution # [0,1]
+                
+                            # store in priv_info_buf
+    
+    
+                # print(f"Env {env_id}, Cube Privileged Info:")
+            print(f"  Mass = {cube_mass}")
+
+                # print(f"  CoM = {cube_com.x}, {cube_com.y}, {cube_com.z}")
+            # print(f"  Friction = {cube_friction}")
+                # print(f"  Table Friction = {table_friction}")
+                # print(f" Inertia = {cube_inertia.x}, {cube_inertia.y}, {cube_inertia.z}")
+             
              
         
     def _reset_init_cube_state(self, env_ids, check_valid=True):
@@ -777,6 +825,8 @@ class FrankaCubeTip(PrivInfoVecTask):
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
+        
+        
 
         if self.control_type == "osc":
             if self.control_input == "pose3d":
@@ -817,6 +867,8 @@ class FrankaCubeTip(PrivInfoVecTask):
 
                 # Compute OSC torques with variable kp and kd
                 u_arm = self._compute_osc_torques(dpose=dpose)
+                
+                
 
             elif self.control_input == "pose6d":
                 # Similar extraction for pose6d
@@ -840,10 +892,15 @@ class FrankaCubeTip(PrivInfoVecTask):
                 u_arm = self._compute_osc_torques(dpose=u_arm)
 
         self._arm_control[:, :] = u_arm  # Apply control with variable kp and kd
+        
+    
+        
 
         # Deploy actions
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self._pos_control))
         self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self._effort_control))
+        
+    
 
 
 
@@ -858,6 +915,8 @@ class FrankaCubeTip(PrivInfoVecTask):
         self.compute_observations()
         self.compute_reward(self.actions)
         self.store_proprio_hist()
+        
+
 
         # debug viz
         if self.viewer and self.debug_viz:
