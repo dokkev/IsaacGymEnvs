@@ -104,7 +104,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
         if self.include_priv_info:
-            self.cfg["env"]["numObservations"] = 29
+            self.cfg["env"]["numObservations"] = 21
         else:
             self.cfg["env"]["numObservations"] = 20
             
@@ -672,11 +672,12 @@ class FrankaCubeSlide(PrivInfoVecTask):
     
                 
             # store in priv_info_buf
-            self.priv_info_buf[env_id, 0] = cube_mass
-            self.priv_info_buf[env_id, 1] = cube_friction
-            self.priv_info_buf[env_id, 2] = cube_com.x
-            self.priv_info_buf[env_id, 3] = cube_com.y
-            self.priv_info_buf[env_id, 4] = cube_com.z
+            # self.priv_info_buf[env_id, 0] = cube_mass
+            # self.priv_info_buf[env_id, 1] = cube_friction
+            # self.priv_info_buf[env_id, 2] = cube_com.x
+            # self.priv_info_buf[env_id, 3] = cube_com.y
+            # self.priv_info_buf[env_id, 4] = cube_com.z
+            self.priv_info_buf[env_id, 0] = cube_friction
             
             
             if self.enable_priv_info_print:

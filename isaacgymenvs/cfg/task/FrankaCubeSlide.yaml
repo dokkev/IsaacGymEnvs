@@ -38,7 +38,7 @@ env:
   
   
   propHistoryLen: 30
-  privInfoDim: 9 
+  privInfoDim: 1 
 
   controlType: osc  # options are {joint_tor, osc}
   controlInput: pose2d # options are {pose3d, pose6d}
