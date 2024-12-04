@@ -165,4 +165,5 @@ task:
             range: [0.03, 1.]
             operation: "scaling"
             distribution: "uniform"
+            setup_only: True
 
