@@ -90,6 +90,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         
         # include priviliged information in the observation space
         self.include_priv_info = self.cfg["env"]["includePrivInfo"]
+        self.num_env_factors = self.cfg['env']['privInfoDim']
 
         # Controller type (OSC or joint torques)
         self.control_type = self.cfg["env"]["controlType"]
@@ -103,12 +104,14 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
-        if self.include_priv_info:
-            self.cfg["env"]["numObservations"] = 21
+        if self.control_input == "primitive":
+            self.cfg["env"]["numObservations"] = 3
         else:
             self.cfg["env"]["numObservations"] = 20
-            
 
+        if self.include_priv_info:
+            self.cfg["env"]["numObservations"] += self.num_env_factors
+    
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
         # actions include: delta EEF if OSC (6)  + kp (6) (kd critically damped)
         if self.control_input == "pose3d":
@@ -122,7 +125,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         if self.cfg["env"]["variableImpedance"]:
             self.variable_imp = True
-            
             self.cfg["env"]["numActions"] += 6
         else:
             self.variable_imp = False
