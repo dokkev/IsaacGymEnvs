@@ -1155,7 +1155,8 @@ def compute_franka_reward(
     # Fixed: specify p=2 for L2 norm (Euclidean norm)
     success_condition1 = torch.norm(cube_vel, p=2, dim=-1) < terminal_velocity_threshold
     success_condition2 = delta_pos < success_threshold 
-    success_condition = success_condition1 & success_condition2  # Combined success condition
+    success_condition3 = progress_buf > 0
+    success_condition = success_condition1 & success_condition2 & success_condition3  # Combined success condition
     success_reward = torch.where(success_condition, reward_settings["r_success_scale"], torch.zeros_like(distance_reward))
 
     # 3. Penalty for End-Effector near the Goal
