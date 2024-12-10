@@ -8,7 +8,7 @@ num_envs = 32
 
 envs = isaacgymenvs.make(
 	seed=0, 
-	task="FrankaCubePush", 
+	task="FrankaCubeThrow", 
 	num_envs=num_envs, 
 	sim_device="cuda:0",
 	rl_device="cuda:0",
