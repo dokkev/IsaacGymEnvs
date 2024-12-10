@@ -50,9 +50,9 @@ wandb_tags: []
 wandb_logcode_dir: '' 
 
 capture_video: False
-capture_video_freq: 1500
+capture_video_freq: 1464
 capture_video_len: 100
-force_render: False
+force_render: True
 
 # disables rendering
 headless: False
