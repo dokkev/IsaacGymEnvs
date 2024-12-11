@@ -3,7 +3,7 @@ import isaacgymenvs
 import torch
 
 
-num_envs = 32
+num_envs = 36
 
 
 envs = isaacgymenvs.make(

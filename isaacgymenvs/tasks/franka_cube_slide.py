@@ -90,7 +90,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
         
         # include priviliged information in the observation space
         self.include_priv_info = self.cfg["env"]["includePrivInfo"]
-        self.num_env_factors = self.cfg['env']['privInfoDim']
 
         # Controller type (OSC or joint torques)
         self.control_type = self.cfg["env"]["controlType"]
@@ -104,14 +103,12 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
-        if self.control_input == "primitive":
-            self.cfg["env"]["numObservations"] = 3
+        if self.include_priv_info:
+            self.cfg["env"]["numObservations"] = 21
         else:
             self.cfg["env"]["numObservations"] = 20
+            
 
-        if self.include_priv_info:
-            self.cfg["env"]["numObservations"] += self.num_env_factors
-    
         # self.cfg["env"]["numObservations"] = 17 if self.control_type == "osc" else 26
         # actions include: delta EEF if OSC (6)  + kp (6) (kd critically damped)
         if self.control_input == "pose3d":
@@ -125,6 +122,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
         if self.cfg["env"]["variableImpedance"]:
             self.variable_imp = True
+            
             self.cfg["env"]["numActions"] += 6
         else:
             self.variable_imp = False
@@ -770,8 +768,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
-        # self.actions = torch.zeros_like(actions, device=self.device)
-        # self.actions[:, 0] = 1.0
 
         # grab initial orientation for fixed ori control 
         if self.quat_desired is None: 
@@ -1157,8 +1153,7 @@ def compute_franka_reward(
     # Fixed: specify p=2 for L2 norm (Euclidean norm)
     success_condition1 = torch.norm(cube_vel, p=2, dim=-1) < terminal_velocity_threshold
     success_condition2 = delta_pos < success_threshold 
-    success_condition3 = progress_buf > 0
-    success_condition = success_condition1 & success_condition2 & success_condition3  # Combined success condition
+    success_condition = success_condition1 & success_condition2  # Combined success condition
     success_reward = torch.where(success_condition, reward_settings["r_success_scale"], torch.zeros_like(distance_reward))
 
     # 3. Penalty for End-Effector near the Goal
