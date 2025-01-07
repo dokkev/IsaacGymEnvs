@@ -118,6 +118,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
             self.cfg["env"]["numActions"] = 3 
         elif self.control_input == "pose2d":
             self.cfg["env"]["numActions"] = 2 
+        elif self.control_input == "pose1d":
+            self.cfg["env"]["numActions"] = 1
         elif self.control_input == "primitive": 
             self.cfg["env"]["numActions"] = 2
         else: # pose6d
@@ -170,7 +172,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         super().__init__(config=self.cfg, rl_device=rl_device, sim_device=sim_device, graphics_device_id=graphics_device_id, headless=headless, virtual_screen_capture=virtual_screen_capture, force_render=force_render)
 
         # Franka defaults
-        if self.control_input == 'pose2d' or self.control_input == 'primitive':
+        if self.control_input == 'pose2d' or self.control_input == 'pose1d' or self.control_input == 'primitive':
             self.franka_default_dof_pos = to_torch(
                 [-1.6278e-02,  7.4004e-01,  1.2501e-03, -2.3875e+00, -7.6284e-02,
                 3.1262e+00,  8.4474e-01,  9.9999e-04,  1.0000e-03], device=self.device
@@ -716,7 +718,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         init_cube_xy_state = centered_cube_xy_state + torch.tensor([init_x_offset, init_y_offset], device=self.device, dtype=torch.float32)
         
         # add offset to the centered_cube_xy_state
-        goal_x_offset = 1.0
+        goal_x_offset = 0.75
         goal_y_offset = 0.0
         # goal_cube_xy_state = centered_cube_xy_state + torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
         goal_cube_xy_state = torch.tensor([goal_x_offset, goal_y_offset], device=self.device, dtype=torch.float32)
@@ -785,6 +787,53 @@ class FrankaCubeSlide(PrivInfoVecTask):
 
 
         if self.control_type == "osc":
+            if self.control_input == "pose1d":
+
+                # print('DEBUG')
+                # solve high friction (0.06)
+                # self.actions[:, 0] = 0.9
+
+                # solve low friction (0.03)
+                # tbd, wiggles at singularity 
+                # self.actions[:, 0] = 0.2
+                # breakpoint()
+            
+                u_arm = self.actions[:, 0]  # First action for 1D position control (x direction only)
+
+                # z_error, constant height
+                z_error = self.table_z_height - self.states["eef_pos"][:, 2]
+
+                # y error, constant y 
+                y_error = 0. - self.states["eef_pos"][:, 1]
+
+                # if self.add_action_noise: 
+                #     noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                #     u_arm += noise
+
+                # Scale the position control
+                u_arm = u_arm * self.cmd_limit[:, :1] / self.action_scale
+
+                # Fixed orientation 
+                if self._steps_elapsed == 0:
+                    ori_error = torch.zeros((self.num_envs, 3), device=self.device)
+                else: 
+                    eef_rot = self.states["eef_quat"]
+                    q_error = quat_mul(self.quat_desired, quat_conjugate(eef_rot))
+                    angle, axis = quat_to_angle_axis(q_error)
+                    ori_error = angle.unsqueeze(1) * axis
+                self._steps_elapsed += 1 
+
+                # Prepare dpose (6D: position + orientation)
+                dpose = torch.zeros((self.num_envs, 6), device=self.device)
+                dpose[:, 0] = u_arm  # Set the position control to x, y, z
+                dpose[:, 1] = y_error
+                dpose[:, 2] = z_error
+                dpose[:, 3:] = ori_error  # Set the orientation to the fixed value
+
+                # Compute OSC torques with variable kp and kd
+                u_arm = self._compute_osc_torques(dpose=dpose)
+
+
             if self.control_input == "pose2d":
                 u_arm = self.actions[:, :2]  # First 2 actions for 2D position control
 
