@@ -6,7 +6,7 @@ class RolloutLogger(Wrapper):
     """
     A Gym wrapper that logs transitions (s, a, r, s') at each step.
     """
-    def __init__(self, env, save_to_disk=False, save_path='rollouts.pt'):
+    def __init__(self, env, save_to_disk=True, save_path='rollouts.pt'):
         super().__init__(env)
         self.rollouts = []  # List to store transitions
         self.last_obs = None
@@ -21,25 +21,38 @@ class RolloutLogger(Wrapper):
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
+        
+   
 
         # Get the number of environments
         num_envs = obs['obs'].shape[0]
+        
+        # print(done)
+        
 
         for i in range(num_envs):
             curr_state_i = self.last_obs['obs'][i]
+            priv_info_i = self.last_obs['priv_info'][i]
+            prop_history_i = self.last_obs['proprio_hist'][i]
+            # print dimensions of prop_history_i
             action_i = action[i]
             reward_i = reward[i]
             next_state_i = obs['obs'][i]
             done_i = done[i]
             env_id = i
+               
+            
+    
 
             # Append the transition as a dictionary
             self.rollouts.append({
                 'env_id': env_id,
-                'state': curr_state_i,
-                'action': action_i,
-                'reward': reward_i,
-                'next_state': next_state_i,
+                # 'state': curr_state_i,
+                # 'action': action_i,
+                # 'reward': reward_i,
+                'proprio_hist': prop_history_i,
+                'priv_info': priv_info_i,
+                # 'next_state': next_state_i,
                 'done': done_i
             })
 

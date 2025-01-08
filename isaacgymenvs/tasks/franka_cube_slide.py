@@ -537,36 +537,53 @@ class FrankaCubeSlide(PrivInfoVecTask):
     
     def store_proprio_hist(self):
         """
-        Store the proprioceptive history of the cube (cube states) in the proprioception buffer. 
+        Store the proprioceptive history of the cube (cube states),  in the proprioception buffer. 
         """
         
         # get cube pos and quat
         cube_states = torch.cat([self.states["cube_pos"], self.states["cube_quat"]], dim=1)  # [num_envs, 7]
+        
+        # get end effector pos and quat
+        ee_states = torch.cat([self.states["eef_pos"], self.states["eef_quat"]], dim=1)  # [num_envs, 7]
+        # get actions [num_envs, 8]
+        actions = self.actions
+
+        
+        # combine cube states, eef states and actions
+        all_states = torch.cat([cube_states, ee_states, actions], dim=1)  # [num_envs, 22]
+        
+        
+    
 
         # proprio_hist_buf = [num_envs] x [prop_hist_len] x [prop_dim]
-        cube_states_dim = cube_states.shape[1] # 7
+        all_states_dim = all_states.shape[1] # 7
         prop_his_buf_dim = self.proprio_hist_buf.shape[2] #[prop_dim] 32 (hardcoded val from `_allocate_task_buffer`)
                 
         # check dimensions of the cube_states and self.proprio_hist_buf
-        if cube_states_dim > prop_his_buf_dim:
-            raise ValueError(f"Proprioception buffer dimension mismatch! Cube state dim: {cube_states_dim} > Proprioception buffer dim: {prop_his_buf_dim}")
+        if all_states_dim > prop_his_buf_dim:
+            raise ValueError(f"Proprioception buffer dimension mismatch! Cube state dim: {all_states_dim} > Proprioception buffer dim: {prop_his_buf_dim}")
         
         # if prop hist buffer's prop dim is greater than cube state dim, pad the cube_states with zeros to match the prop hist buffer dim
-        elif cube_states_dim < prop_his_buf_dim:
-            padding = torch.zeros((self.num_envs, (prop_his_buf_dim - cube_states_dim)), device=self.device, dtype=torch.float)
-            cube_states = torch.cat([cube_states, padding], dim=1) # shape: [num_envs, prop_his_buf_dim]
+        elif all_states_dim < prop_his_buf_dim:
+            padding = torch.zeros((self.num_envs, (prop_his_buf_dim - all_states_dim)), device=self.device, dtype=torch.float)
+            all_states = torch.cat([all_states, padding], dim=1) # shape: [num_envs, prop_his_buf_dim]
             
         # update the proprio_hist_buf
         # Shift the buffer to the left by one to discard the oldest data
         self.proprio_hist_buf = torch.roll(self.proprio_hist_buf, shifts=-1, dims=1)
+    
+        # self.proprio_hist_buf[:, -1, :] = cube_states
+        self.proprio_hist_buf[:, -1, :] = all_states
         
-        # append the new cube state to the buffer
-        self.proprio_hist_buf[:, -1, :] = cube_states
+        self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+        
+        
         
         
         # Print the shape and example data of the proprio_hist_buf for debugging
         # print(f"proprio_hist_buf shape: {self.proprio_hist_buf.shape}")
-        # print(f"proprio_hist_buf example data (first env): {self.proprio_hist_buf[0]}")
+    
+        print(f"proprio_hist_buf example data (first env): {self.proprio_hist_buf[0]}")
         
 
     def reset_idx(self, env_ids):

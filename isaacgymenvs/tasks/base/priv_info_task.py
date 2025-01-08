@@ -42,6 +42,7 @@ class PrivInfoVecTask(VecTask):
 
     def _update_priv_buf(self, env_id, name, value, lower=None, upper=None):
         # normalize to -1, 1
+        print("i am here")
         s, e = self.priv_info_dict[name]
         if eval(f'self.enable_priv_{name}'):
             if type(value) is list:
@@ -66,7 +67,8 @@ class PrivInfoVecTask(VecTask):
        super().step(actions)
        if self.config['task']['randomize']:
             self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
-            self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device) 
+            self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+   
        return self.obs_dict, self.rew_buf, self.reset_buf, self.extras
        
         
