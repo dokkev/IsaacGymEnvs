@@ -3,12 +3,12 @@ import isaacgymenvs
 import torch
 
 
-num_envs = 32
+num_envs = 1
 
 
 envs = isaacgymenvs.make(
 	seed=0, 
-	task="FrankaCubePush", 
+	task="FrankaCubeSlide", 
 	num_envs=num_envs, 
 	sim_device="cuda:0",
 	rl_device="cuda:0",

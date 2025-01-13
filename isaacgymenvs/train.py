@@ -98,6 +98,9 @@ def launch_rlg_hydra(cfg: DictConfig):
     from isaacgymenvs.learning import amp_models
     from isaacgymenvs.learning import amp_network_builder
     import isaacgymenvs
+    
+    from rollout_logger import RolloutLogger
+    from predictor import StatePredicter
 
 
     time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -142,7 +145,10 @@ def launch_rlg_hydra(cfg: DictConfig):
                 step_trigger=lambda step: step % cfg.capture_video_freq == 0,
                 video_length=cfg.capture_video_len,
             )
-        return envs
+            
+        wrapped_env = RolloutLogger(envs)
+        # wrapped_env = StatePredicter(envs, model_path='predictor.pth')   
+        return wrapped_env
 
     env_configurations.register('rlgpu', {
         'vecenv_type': 'RLGPU',
