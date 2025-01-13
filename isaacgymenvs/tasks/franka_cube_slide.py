@@ -1199,7 +1199,7 @@ def compute_franka_reward(
     distance_reward = reward_settings["r_pos_scale"] * (1.0 - torch.tanh(10.0 * delta_pos))
 
     # 2. Success Reward
-    success_threshold = 0.05
+    success_threshold = 0.1
     # success condition is True if the cube is within the success threshold and velocity is below a certain threshold
     terminal_velocity_threshold = 0.001
     
