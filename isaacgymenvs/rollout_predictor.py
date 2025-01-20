@@ -54,7 +54,7 @@ learning_rate = 0.001
 train_dataset = RolloutDataset(rollouts[:int(0.8 * len(rollouts))], history_len)
 test_dataset = RolloutDataset(rollouts[int(0.8 * len(rollouts)):], history_len)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
 # Initialize model, loss, and optimizer
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

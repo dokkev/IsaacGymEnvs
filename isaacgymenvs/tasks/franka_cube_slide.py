@@ -583,7 +583,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # Print the shape and example data of the proprio_hist_buf for debugging
         # print(f"proprio_hist_buf shape: {self.proprio_hist_buf.shape}")
     
-        print(f"proprio_hist_buf example data (first env): {self.proprio_hist_buf[0]}")
+        # print(f"proprio_hist_buf example data (first env): {self.proprio_hist_buf[0]}")
         
 
     def reset_idx(self, env_ids):
