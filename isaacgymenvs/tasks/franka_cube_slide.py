@@ -1199,7 +1199,7 @@ def compute_franka_reward(
     distance_reward = reward_settings["r_pos_scale"] * (1.0 - torch.tanh(10.0 * delta_pos))
 
     # 2. Success Reward
-    success_threshold = 0.05
+    success_threshold = 0.06
     # success condition is True if the cube is within the success threshold and velocity is below a certain threshold
     terminal_velocity_threshold = 0.001
     
@@ -1211,30 +1211,30 @@ def compute_franka_reward(
     success_reward = torch.where(success_condition, reward_settings["r_success_scale"], torch.zeros_like(distance_reward))
 
     # 3. Penalty for End-Effector near the Goal
-    ee_pos = states["eef_pos"]
-    ee_goal_dist = torch.norm(ee_pos - goal_pos, dim=-1)
-    ee_penalty = -reward_settings["r_eef_approach_scale"] * torch.tanh(10.0 * ee_goal_dist)
+    # ee_pos = states["eef_pos"]
+    # ee_goal_dist = torch.norm(ee_pos - goal_pos, dim=-1)
+    # ee_penalty = -reward_settings["r_eef_approach_scale"] * torch.tanh(10.0 * ee_goal_dist)
 
     # 4. Cube Velocity Reward
-    goal_dir = goal_pos - cube_pos
-    goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)
-    vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)
-    vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
+    # goal_dir = goal_pos - cube_pos
+    # goal_dir = goal_dir / torch.norm(goal_dir, dim=-1, keepdim=True)
+    # vel_along_goal = torch.sum(cube_vel * goal_dir, dim=-1)
+    # vel_reward = reward_settings["r_vel_scale"] * vel_along_goal
     
     # 5. Orientation Reward only if the cube is not in the original position (using delta_pos)
-    move_threshold = 0.6  
-    has_moved = delta_pos < move_threshold
+    # move_threshold = 0.6  
+    # has_moved = delta_pos < move_threshold
 
     # Compute the rotation difference as a quaternion
-    rotation_diff_quat = quat_mul(cube_quat, quat_conjugate(goal_quat))
-    angle, axis = quat_to_angle_axis(rotation_diff_quat)
+    # rotation_diff_quat = quat_mul(cube_quat, quat_conjugate(goal_quat))
+    # angle, axis = quat_to_angle_axis(rotation_diff_quat)
 
     # Reward for aligning roll and pitch (x and y components of the axis)
-    roll_pitch_alignment = torch.norm(axis[:, :2], dim=-1) * angle
-    orientation_reward = reward_settings["r_ori_scale"] * (1.0 - torch.tanh(5.0 * roll_pitch_alignment))
+    # roll_pitch_alignment = torch.norm(axis[:, :2], dim=-1) * angle
+    # orientation_reward = reward_settings["r_ori_scale"] * (1.0 - torch.tanh(5.0 * roll_pitch_alignment))
 
     # Apply orientation reward only if the cube has moved
-    orientation_reward = torch.where(has_moved, orientation_reward, torch.zeros_like(orientation_reward))
+    # orientation_reward = torch.where(has_moved, orientation_reward, torch.zeros_like(orientation_reward))
 
     # Combine rewards
     rewards = (distance_reward +
@@ -1246,8 +1246,8 @@ def compute_franka_reward(
     )
 
     # Compute resets
-    reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
-    
+    # reset_buf = torch.where((progress_buf >= max_episode_length - 1) | success_condition, torch.ones_like(reset_buf), reset_buf)
+    reset_buf = torch.where((progress_buf >= max_episode_length - 1), torch.ones_like(reset_buf), reset_buf)
     return rewards.detach(), reset_buf, success_condition
 
 
