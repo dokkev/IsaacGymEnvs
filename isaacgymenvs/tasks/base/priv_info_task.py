@@ -33,9 +33,8 @@ class PrivInfoVecTask(VecTask):
         self.prop_hist_len = self.config['env']['propHistoryLen']
         self.num_env_factors = self.config['env']['privInfoDim']
         self.priv_info_buf = torch.zeros((self.num_envs, self.num_env_factors), device=self.device, dtype=torch.float)
-
-        # TODO: fix 32 below 
-        self.proprio_hist_buf = torch.zeros((self.num_envs, self.prop_hist_len, 32), device=self.device, dtype=torch.float)
+        proprio_hist_dim = self.num_obs + self.num_actions
+        self.proprio_hist_buf = torch.zeros((self.num_envs, self.prop_hist_len, proprio_hist_dim), device=self.device, dtype=torch.float)
         
         # print(f"Priviliged Information Buffer Dimension: {self.num_env_factors.shape} <- (num_envs, priv_info_dim)")
         # print(f"Proprioceptiion Buffer Dimension: {self.proprio_hist_buf.shape} <- (num_envs, num_env_factors, num_env_factors)")
