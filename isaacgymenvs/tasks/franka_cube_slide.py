@@ -616,6 +616,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         
         self.progress_buf[env_ids] = 0
         self.reset_buf[env_ids] = 0
+        self.proprio_hist_buf[env_ids, :, :] = 0.
         
         # visualize goal cube state
         axes_geom = gymutil.AxesGeometry(0.1)
