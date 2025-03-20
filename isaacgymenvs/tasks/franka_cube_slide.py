@@ -1036,8 +1036,6 @@ class FrankaCubeSlide(PrivInfoVecTask):
             Observations, rewards, resets, info
             Observations are dict of observations (currently only one member called 'obs')
         """
-
-
         # randomize actions
         if self.dr_randomizations.get('actions', None):
             actions = self.dr_randomizations['actions']['noise_lambda'](actions)
@@ -1047,43 +1045,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # if the action is a primitive, run it separately 
         if self.control_input == "primitive":
             return self.primitive_step(actions)
-        
-        # apply actions
-        self.pre_physics_step(action_tensor)
-
-        # step physics and render each frame
-        for i in range(self.control_freq_inv):
-            if self.force_render:
-                self.render()
-            self.gym.simulate(self.sim)
-
-        # to fix!
-        if self.device == 'cpu':
-            self.gym.fetch_results(self.sim, True)
-
-        # compute observations, rewards, resets, ...
-        self.post_physics_step()
-
-        self.control_steps += 1
-
-        # fill time out buffer: set to 1 if we reached the max episode length AND the reset buffer is 1. Timeout == 1 makes sense only if the reset buffer is 1.
-        self.timeout_buf = (self.progress_buf >= self.max_episode_length - 1) & (self.reset_buf != 0)
-
-        # randomize observations
-        if self.dr_randomizations.get('observations', None):
-            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
-
-        self.extras["time_outs"] = self.timeout_buf.to(self.rl_device)
-
-        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
-
-        # asymmetric actor-critic
-        if self.num_states > 0:
-            self.obs_dict["states"] = self.get_state()
-
-        return self.obs_dict, self.rew_buf.to(self.rl_device), self.reset_buf.to(self.rl_device), self.extras
-    
-
+        else: 
+            return super().step(actions)
 
     def post_physics_step(self):
         self.progress_buf += 1

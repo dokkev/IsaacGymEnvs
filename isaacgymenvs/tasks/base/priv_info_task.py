@@ -60,6 +60,24 @@ class PrivInfoVecTask(VecTask):
             self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
             self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
         return self.obs_dict
+    
+    def reset_done(self):
+        """Reset the environment.
+        Returns:
+            Observation dictionary, indices of environments being reset
+        """
+        done_env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
+        if len(done_env_ids) > 0:
+            self.reset_idx(done_env_ids)
+
+        self.obs_dict["obs"] = torch.clamp(self.obs_buf, -self.clip_obs, self.clip_obs).to(self.rl_device)
+        self.obs_dict['priv_info'] = self.priv_info_buf.to(self.rl_device)
+        self.obs_dict['proprio_hist'] = self.proprio_hist_buf.to(self.rl_device)
+
+        # asymmetric actor-critic
+        if self.num_states > 0:
+            self.obs_dict["states"] = self.get_state()
+        return self.obs_dict, done_env_ids
 
     def step(self, actions):
        super().step(actions)
