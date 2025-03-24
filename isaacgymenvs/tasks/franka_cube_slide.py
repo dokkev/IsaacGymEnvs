@@ -101,6 +101,7 @@ class FrankaCubeSlide(PrivInfoVecTask):
         # assert self.control_type in {"pose3d", "pose6d"},\
             # "Invalid control input specified. Must be one of: {pose3d, pose6d}"
 
+        self.add_action_noise = self.cfg["env"]["addActionNoise"]
 
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
@@ -787,9 +788,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 # y error, constant y 
                 y_error = 0. - self.states["eef_pos"][:, 1]
 
-                # if self.add_action_noise: 
-                #     noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
-                #     u_arm += noise
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
 
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :1] / self.action_scale
@@ -821,9 +822,9 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 # z_error, constant height
                 z_error = self.table_z_height - self.states["eef_pos"][:, 2]
 
-                # if self.add_action_noise: 
-                #     noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
-                #     u_arm += noise
+                if self.add_action_noise: 
+                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    u_arm += noise
 
                 # Scale the position control
                 u_arm = u_arm * self.cmd_limit[:, :2] / self.action_scale
