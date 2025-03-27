@@ -28,6 +28,10 @@ env:
   aggregateMode: 3
 
   actionScale: 1.0
+  addActionNoise: True
+  actionBias: 0.0
+  actionVar: 0.1
+
 
   posRewardScale: 2.0
   oriRewardScale: 0.5

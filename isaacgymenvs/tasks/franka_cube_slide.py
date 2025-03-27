@@ -102,6 +102,8 @@ class FrankaCubeSlide(PrivInfoVecTask):
             # "Invalid control input specified. Must be one of: {pose3d, pose6d}"
 
         self.add_action_noise = self.cfg["env"]["addActionNoise"]
+        self.action_bias = self.cfg["env"]["actionBias"]
+        self.action_var = self.cfg["env"]["actionVar"]
 
         # dimensions
         # obs include: cube_pos(3) + cube_quat(4) + goal_cube_dist_pos(3)  + eef_pose (7) + [priv_info_dim]
@@ -789,7 +791,10 @@ class FrankaCubeSlide(PrivInfoVecTask):
                 y_error = 0. - self.states["eef_pos"][:, 1]
 
                 if self.add_action_noise: 
-                    noise = torch.normal(self.action_bias, self.action_var, size=u_arm.shape).to(self.device)
+                    # construct action var and bias from scalar values
+                    action_bias = self.action_bias * torch.ones_like(u_arm, device=self.device)
+                    saction_var = self.action_var * torch.ones_like(u_arm, device=self.device)
+                    noise = torch.normal(action_bias, saction_var).to(self.device)
                     u_arm += noise
 
                 # Scale the position control

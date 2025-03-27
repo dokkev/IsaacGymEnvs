@@ -45,7 +45,7 @@ wandb_activate: True
 wandb_group: ''
 wandb_name: ${train.params.config.name}
 wandb_entity: 'robin-abba'
-wandb_project: 'push-ppo'
+wandb_project: 'slide-ppo'
 wandb_tags: []
 wandb_logcode_dir: '' 
 
@@ -55,7 +55,7 @@ capture_video_len: 100
 force_render: True
 
 # disables rendering
-headless: False
+headless: True
 
 # set default task and default training config based on task
 defaults:
