@@ -41,7 +41,7 @@ sigma: ''
 # set to True to use multi-gpu training
 multi_gpu: False
 
-wandb_activate: True
+wandb_activate: False
 wandb_group: ''
 wandb_name: ${train.params.config.name}
 wandb_entity: 'robin-abba'
@@ -52,7 +52,7 @@ wandb_logcode_dir: ''
 capture_video: False
 capture_video_freq: 1464
 capture_video_len: 100
-force_render: True
+force_render: False
 
 # disables rendering
 headless: True
