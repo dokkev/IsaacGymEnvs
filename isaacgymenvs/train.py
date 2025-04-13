@@ -146,9 +146,9 @@ def launch_rlg_hydra(cfg: DictConfig):
                 video_length=cfg.capture_video_len,
             )
             
-        wrapped_env = RolloutLogger(envs)
+        # wrapped_env = RolloutLogger(envs)
         # wrapped_env = StatePredicter(envs, model_path='predictor.pth')   
-        return wrapped_env
+        return envs
 
     env_configurations.register('rlgpu', {
         'vecenv_type': 'RLGPU',
