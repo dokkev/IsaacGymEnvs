@@ -7,7 +7,7 @@ physics_engine: ${..physics_engine}
 env:
   numEnvs: ${resolve_default:8192,${...num_envs}}
   envSpacing: 2.5
-  episodeLength: 300
+  episodeLength: 200
   enableDebugVis: False
   enablePrivInfoPrint: False # it won't print if randomize is false
   includePrivInfo: True #include priv info in the observation
@@ -30,18 +30,18 @@ env:
   actionScale: 1.0
   addActionNoise: True
   actionBias: 0.0
-  actionVar: 0.1
-
+  actionVar: 0.2
 
   posRewardScale: 2.0
   oriRewardScale: 0.5
   velRewardScale: 0.5
   contactRewardScale: 0.3
-  successRewardScale: 300.0
+  successRewardScale: 10.0
   eefApproachPenaltyScale: 0.1
+
   
   
-  propHistoryLen: 30
+  propHistoryLen: 5
   privInfoDim: 1 
 
   controlType: osc  # options are {joint_tor, osc}
@@ -78,7 +78,7 @@ sim:
     contact_collection: 0 # 0: CC_NEVER (don't collect contact info), 1: CC_LAST_SUBSTEP (collect only contacts on last substep), 2: CC_ALL_SUBSTEPS (broken - do not use!)
 
 task:
-  randomize: False
+  randomize: True
   randomization_params:
     frequency: 1   # Define how many simulation steps between generating new randomizations
     # observations:
@@ -164,8 +164,14 @@ task:
         rigid_shape_properties:
           friction:
             num_buckets: 2
+            # num_buckets: 64
+            # range: [0.11, 0.11]
+            # range: [0.15, 0.15]
             # range: [0.03, 0.09]
-            range: [0.03, 0.03]
+            # range: [0.04, 0.09]
+            range: [0.05, 0.10]
+            # range: [0.06, 0.12]
+            # range: [0.03, 0.03]
             # range: [0.06, 0.06]
             operation: "scaling"
             distribution: "uniform"

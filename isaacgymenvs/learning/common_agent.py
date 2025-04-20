@@ -117,6 +117,9 @@ class CommonAgent(a2c_continuous.A2CAgent):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
+        
+        self.success_total = 0
+        self.success_count = 0
 
 
         self.model_output_file = os.path.join(self.network_path, 
@@ -289,6 +292,14 @@ class CommonAgent(a2c_continuous.A2CAgent):
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
             self.algo_observer.process_infos(infos, done_indices)
+            
+            if "success" in infos:
+                successes = infos["success"][done_indices].float().cpu().numpy()
+                self.success_total += successes.sum()
+                self.success_count += len(successes)
+                
+    
+
 
             not_dones = 1.0 - self.dones.float()
 
@@ -524,4 +535,14 @@ class CommonAgent(a2c_continuous.A2CAgent):
         self.writer.add_scalar('info/e_clip', self.e_clip * train_info['lr_mul'][-1], frame)
         self.writer.add_scalar('info/clip_frac', torch_ext.mean_list(train_info['actor_clip_frac']).item(), frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(train_info['kl']).item(), frame)
+        
+        if self.success_count > 0:
+            success_rate = self.success_total / self.success_count
+            self.writer.add_scalar("rewards/success_rate", success_rate, frame)
+
+            # Optionally reset after logging
+            self.success_total = 0
+            self.success_count = 0
+
+
         return
